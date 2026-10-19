@@ -1,0 +1,5 @@
+{ "identityRequest": "F0 7E 7F 06 01 F7", "identityReplyPrefix": "F0 7E 10 06 02 41 0B 04",
+  "commands": { "EDITOR_COMMUNICATION_LEVEL": "7F 00 00 00", "EDITOR_COMMUNICATION_MODE": "7F 00 00 01",
+                "RUNNING_MODE": "7F 00 00 02", "PATCH_WRITE": "7F 00 01 04", "FACTORY_RESET": "7F 02 00 7C" },
+  "addresses": { "CURRENT_PATCH_NAME": "10 00 00 00", "CHAIN": "10 00 0F 00" },
+  "sizes": {}, "enums": {} }

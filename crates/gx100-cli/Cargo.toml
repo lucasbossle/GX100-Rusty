@@ -1,0 +1,20 @@
+[package]
+name = "gx100-cli"
+version = "0.1.0"
+description = "Command-line tool for the BOSS GX-100"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "gx100"
+path = "src/main.rs"
+
+[features]
+default = ["midi"]
+# Real MIDI I/O via midir. Without it only offline commands and --sim work.
+midi = ["dep:midir"]
+
+[dependencies]
+gx100-protocol = { path = "../gx100-protocol" }
+midir = { version = "0.10", optional = true }

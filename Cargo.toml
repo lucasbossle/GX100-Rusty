@@ -1,0 +1,8 @@
+[workspace]
+resolver = "2"
+members = ["crates/gx100-protocol", "crates/gx100-cli"]
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.75"
+license = "MIT OR Apache-2.0"

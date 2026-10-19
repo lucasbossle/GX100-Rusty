@@ -139,3 +139,8 @@ out('commands.json', commands);
 out('effects.json', { fxTypes, effects, nonFxBlocks: Object.fromEntries(extraEffects.map((k) => [k, EP[k].parameters || null])) });
 out('resources.json', resources);
 console.log(`\n${Object.keys(blocks).length} blocks, ${root.length} root entries, ${flat.length} resolved params (system+temp), ${fxTypes.length} fx types`);
+
+// ------------------------------------------------------------ rust tables
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+execFileSync(process.execPath, [fileURLToPath(new URL('./gen_rust.mjs', import.meta.url)), outDir], { stdio: 'inherit' });
