@@ -1,0 +1,5 @@
+# Derived from Roland's BOSS TONE STUDIO files — keep local, never publish.
+/extracted/
+/target/
+node_modules/
+.DS_Store
