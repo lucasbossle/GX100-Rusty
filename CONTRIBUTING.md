@@ -73,6 +73,10 @@ hardware, and the open items. Please update it when you learn something new abou
 
 ## Pull requests
 
+`master` is protected: changes reach it only through pull requests, which the maintainer reviews and merges. Direct
+pushes, force-pushes and deleting the branch are blocked. To contribute, fork the repository, push a branch to your
+fork and open a pull request against `master`.
+
 - One topic per PR, with a short description of what and why.
 - Include tests where it makes sense (the simulator in `gx100-protocol::sim` covers most write paths).
 - Mention what you verified on hardware, if anything.
