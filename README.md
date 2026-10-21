@@ -1,4 +1,4 @@
-# gx100-editor
+# GX100-Rusty
 
 An independent, open-source editor for the **BOSS GX-100** guitar effects processor, written in Rust. It talks to the
 pedal over USB MIDI, edits patches live, and adds things the official editor doesn't have: setlists that reorder
@@ -47,8 +47,8 @@ You need:
 - **BOSS TONE STUDIO for GX-100**, installed (free from boss.info). The editor needs the parameter tables inside it.
 
 ```sh
-git clone https://github.com/lucasbossle/gx100-editor.git
-cd gx100-editor
+git clone https://github.com/lucasbossle/GX100-Rusty.git
+cd GX100-Rusty
 
 # 1. Generate the parameter tables from your BOSS TONE STUDIO install → extracted/ (gitignored)
 node tools/extract/extract.mjs

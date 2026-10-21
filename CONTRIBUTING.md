@@ -1,4 +1,4 @@
-# Contributing to gx100-editor
+# Contributing to GX100-Rusty
 
 Thanks for helping! Bug reports, hardware test reports (especially Windows and Linux), and pull requests are all
 welcome. For anything bigger than a small fix, please open an issue first so we can agree on the approach.
