@@ -236,7 +236,7 @@ pub(super) fn doc_label(
 /// small note under the setting. Nothing for options it doesn't explain.
 pub(super) fn option_note(ui: &mut egui::Ui, doc: Option<&ParamDoc>, label: &str) {
     if let Some(t) = doc.and_then(|d| d.option(label)) {
-        ui.add(egui::Label::new(RichText::new(t).small().weak()).wrap());
+        ui.add(egui::Label::new(RichText::new(t).weak()).wrap());
     }
 }
 
