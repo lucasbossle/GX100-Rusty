@@ -74,11 +74,12 @@ const root = am.root.map((e) => ({ addr: hex7(e.addr), name: e.name, block: name
 
 // flat, fully-resolved map of everything except the 200 stored user patches
 const flat = [];
+const blockAddr = {}; // "Temp_patch%common" -> linear address, as the UI definition names blocks
 const walk = (arr, base, prefix) => {
   for (const e of arr) {
     const abs = base + e.addr;
     const p = prefix ? `${prefix}.${e.name}` : e.name;
-    if ('child' in e) walk(e.child, abs, p);
+    if ('child' in e) { blockAddr[p.replaceAll('.', '%')] = abs; walk(e.child, abs, p); }
     else flat.push({ addr: hex7(abs), path: p, desc: e.desc, ...encoding(e.size), min: e.min, max: e.max, init: e.init, ofs: e.ofs, factor: e.factor });
   }
 };
@@ -103,6 +104,45 @@ const resources = vm.runInContext('Resource()', ctx).map((r, i) => ({
   id: i, values: Array.isArray(r.text) ? r.text : String(r.text).split(',').map((s) => s.trim()), ...(r.icon ? { icon: r.icon } : {}),
 }));
 
+// ------------------------------------------------- parameter value labels
+// The editor's UI definition (bg777 = GX-100) binds widgets to parameters ("System_control%29") and to a
+// resource list for their labels. Only lists that exactly cover a parameter's range are kept.
+const elf = JSON.parse(fs.readFileSync(path.join(appPath, 'Contents/Resources/html/bg777-pc.elf'), 'utf8').replace(/^\uFEFF/, ''));
+const lin7 = (hex) => hex.split(' ').reduce((a, x) => a * 128 + parseInt(x, 16), 0);
+const pathAt = new Map(flat.map((f) => [lin7(f.addr), f]));
+const paramValues = new Map();
+let skipped = 0;
+// Dials show their labels through a separate "stringer" widget: "<stem>-stringer" labels "<stem>-dial".
+const stringerRes = new Map();
+for (const page of elf.pages) for (const it of page.items || []) {
+  if (it.type === 'stringer' && it['resource-id'] !== undefined && /-stringer$/.test(it.id || ''))
+    stringerRes.set(it.id.replace(/-stringer$/, '-dial'), it['resource-id']);
+}
+for (const page of elf.pages) for (let it of page.items || []) {
+  if (it['resource-id'] === undefined && stringerRes.has(it.id)) it = { ...it, 'resource-id': stringerRes.get(it.id) };
+  if (!it['parameter-id'] || it['resource-id'] === undefined) continue;
+  const parts = it['parameter-id'].split('%');
+  const base = blockAddr[parts.slice(0, -1).join('%')];
+  const f = base === undefined ? undefined : pathAt.get(base + Number(parts[parts.length - 1]));
+  const labels = resources[+it['resource-id']]?.values;
+  if (!f || !labels) { skipped++; continue; }
+  // A list must cover the parameter's range exactly (the widget's own range is sometimes one too wide,
+  // e.g. the assign SOURCE list).
+  if (labels.length !== f.max - f.min + 1 || +it.min !== f.min) { skipped++; continue; }
+  const min = f.min;
+  const prev = paramValues.get(f.path);
+  if (prev && prev.labels.join() !== labels.join()) { console.warn(`labels differ for ${f.path}; keeping the first`); continue; }
+  paramValues.set(f.path, { path: f.path, first: min, labels });
+}
+// The editor shows all 20 assigns on one page bound to assign(1); the same labels apply to each.
+for (const v of [...paramValues.values()].filter((v) => v.path.startsWith('Temp_patch.assign(1).'))) {
+  for (let n = 2; n <= 20; n++) {
+    const path = v.path.replace('assign(1)', `assign(${n})`);
+    if (flat.some((f) => f.path === path)) paramValues.set(path, { ...v, path });
+  }
+}
+console.log(`value labels for ${paramValues.size} parameters (${skipped} widgets without a usable list)`);
+
 // ------------------------------------------------------- effect parameters
 const ccSrc = read('businesslogic/chain/chain_controller.js');
 const fxLists = [...ccSrc.matchAll(/RESOURCE_FX_TYPE\s*=\s*\{\s*text:\s*"([^"]+)"/g)].map((m) => m[1].split(',').map((s) => s.trim()));
@@ -113,20 +153,35 @@ epSrc = epSrc.replace(/^appendBpmMidiAfterBpm\(\);/m, '/* skipped */');
 run(read('businesslogic/numpad_const.js'), 'numpad_const.js');
 run(epSrc, 'effect_parameter.js');
 const EP = ctx.EFFECT_PARAMETERS;
-const effects = fxTypes.map((t, typeId) => {
-  const def = EP[t];
-  return {
-    typeId, name: t,
-    parameters: def && def.parameters ? def.parameters.map((p) => ({
+// indexMachineValue (a few TYPE lists): the list position of each stored value, when the list
+// isn't in value order. Label of stored value v = values[indexMachineValue[v]].
+const fxParams = (def) => def && def.parameters ? def.parameters.filter((p) => p.address !== undefined).map((p) => ({
       name: p.name, uniqueName: p.uniqueName,
       ...(p.address >= 3 ? { paramIndex: (p.address - 3) / 4 } : { field: p.address === 1 ? 'Switch' : p.address === 0 ? 'Type' : 'DuplicationNumber' }), offsetInFxItem: hex7(p.address),
       ...encoding(p.size), min: p.min, max: p.max, init: p.init, ofs: p.ofs,
       ...(p.factor ? { factor: p.factor } : {}), ...(p.format ? { format: p.format } : {}),
       ...(p.resourceId !== undefined ? { values: resources[p.resourceId]?.values, resourceId: p.resourceId } : {}),
+      ...(p.indexMachineValue ? { indexMachineValue: p.indexMachineValue } : {}),
       template: p.templateValue,
-    })) : null,
-  };
-});
+    })) : null;
+const effects = fxTypes.map((t, typeId) => ({ typeId, name: t, parameters: fxParams(EP[t]) }));
+// The patch's MASTER settings, as assign targets see them.
+const master = { typeId: 99, name: 'MASTER', parameters: fxParams(EP.MASTER) };
+
+// ------------------------------------------------------------------ assigns
+// Assign targets: TARGET is an index into ASSIGN_TARGETS; an effect target names a parameter
+// (uniqueName) of the FX in slot TARGET_FX_ITEM, whose type must match the target's category.
+run(read('businesslogic/assign_const.js'), 'assign_const.js');
+const assign = {
+  categories: ctx.ASSIGN_CATEGORIES.map((c, i) => {
+    if (c.index !== i) throw new Error(`assign category ${c.name} out of order`);
+    return { name: c.name, hasSwitch: !!c.hasSwitch, blockName: c.blockName };
+  }),
+  targets: ctx.ASSIGN_TARGETS.map((t, i) => {
+    if (t.index !== i) throw new Error(`assign target ${t.name} out of order`);
+    return { name: t.name, category: t.category, effect: t.effect !== false, uniqueName: t.paramUniqueName };
+  }),
+};
 const extraEffects = Object.keys(EP).filter((k) => !fxTypes.includes(k));
 
 // ------------------------------------------------------------------ write
@@ -136,8 +191,10 @@ out('product.json', product);
 out('address_map.blocks.json', { root, blocks });
 out('address_map.flat.json', flat);
 out('commands.json', commands);
-out('effects.json', { fxTypes, effects, nonFxBlocks: Object.fromEntries(extraEffects.map((k) => [k, EP[k].parameters || null])) });
+out('effects.json', { fxTypes, effects, master, nonFxBlocks: Object.fromEntries(extraEffects.map((k) => [k, EP[k].parameters || null])) });
+out('assign.json', assign);
 out('resources.json', resources);
+out('param_values.json', [...paramValues.values()].sort((a, b) => (a.path < b.path ? -1 : 1)));
 console.log(`\n${Object.keys(blocks).length} blocks, ${root.length} root entries, ${flat.length} resolved params (system+temp), ${fxTypes.length} fx types`);
 
 // ------------------------------------------------------------ rust tables

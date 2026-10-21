@@ -65,6 +65,42 @@ impl ParamDef {
     pub fn spec(&self) -> ValueSpec {
         ValueSpec { encoding: self.encoding, min: self.min, max: self.max, ofs: self.ofs }
     }
+
+    /// Value labels, when the official editor shows this parameter as a list.
+    pub fn labels(&self) -> Option<&'static ParamValues> {
+        param_values(self.path)
+    }
+
+    /// Human-readable value: its label when the parameter is a list.
+    pub fn display(&self, value: i32) -> String {
+        if let Some(l) = self.labels().and_then(|v| v.label(value)) {
+            return l.to_string();
+        }
+        if self.factor > 1 {
+            let v = value as f64 / self.factor as f64;
+            return if v.fract() == 0.0 { format!("{v:.0}") } else { format!("{v}") };
+        }
+        value.to_string()
+    }
+}
+
+/// The labels of a list parameter: `labels[i]` is the label of value `first + i`.
+#[derive(Debug, Clone, Copy)]
+pub struct ParamValues {
+    pub path: &'static str,
+    pub first: i32,
+    pub labels: &'static [&'static str],
+}
+
+impl ParamValues {
+    pub fn label(&self, value: i32) -> Option<&'static str> {
+        usize::try_from(value - self.first).ok().and_then(|i| self.labels.get(i)).copied()
+    }
+
+    /// (value, label) pairs, for building a picker.
+    pub fn options(&self) -> impl Iterator<Item = (i32, &'static str)> + '_ {
+        self.labels.iter().enumerate().map(|(i, l)| (self.first + i as i32, *l))
+    }
 }
 
 /// Which field of an FX slot an [`FxParamDef`] lives in.
@@ -144,16 +180,80 @@ impl FxTypeDef {
     }
 }
 
+/// A group of assign targets: one per FX type (matched by `block_name`), plus MASTER, TUNER, MIDI and "----".
+#[derive(Debug, Clone, Copy)]
+pub struct AssignCategoryDef {
+    pub name: &'static str,
+    /// Its targets start with ON/OFF (the effect's switch).
+    pub has_switch: bool,
+    /// The FX type (or MASTER/TUNER/MIDI) the category belongs to.
+    pub block_name: &'static str,
+}
+
+/// What an assign can move. The value of `assign(n).TARGET` indexes [`ASSIGN_TARGETS`].
+#[derive(Debug, Clone, Copy)]
+pub struct AssignTargetDef {
+    pub name: &'static str,
+    /// Index in [`ASSIGN_CATEGORIES`]; -1 for ON/OFF, which every effect with a switch shares.
+    pub category: i16,
+    /// A parameter of the FX in slot `TARGET_FX_ITEM`; otherwise of MASTER, TUNER or MIDI.
+    pub effect: bool,
+    /// The [`FxParamDef::unique_name`] it moves.
+    pub unique_name: &'static str,
+}
+
+/// Text from the GX-100 parameter guide about one setting: what it does, and per list option.
+/// Fetched by `tools/extract/manual.mjs` into the (local-only) generated tables; empty without it.
+#[derive(Debug, Clone, Copy)]
+pub struct ParamDoc {
+    /// FX docs: the parameter's `unique_name`. [`PARAM_DOCS`]: the parameter path, with numbers in
+    /// parentheses replaced by `n` (`Temp_patch.assign(n).SOURCE`).
+    pub key: &'static str,
+    pub text: &'static str,
+    /// (option label as the pedal shows it, explanation)
+    pub options: &'static [(&'static str, &'static str)],
+}
+
+impl ParamDoc {
+    pub fn option(&self, label: &str) -> Option<&'static str> {
+        let norm = |s: &str| s.chars().filter(|c| c.is_alphanumeric()).collect::<String>().to_ascii_uppercase();
+        let l = norm(label);
+        self.options.iter().find(|(o, _)| norm(o) == l).map(|(_, t)| *t)
+    }
+}
+
+/// The guide's text about an FX type (what it does, what it models) and its parameters.
+#[derive(Debug, Clone, Copy)]
+pub struct FxDoc {
+    pub fx: &'static str,
+    pub text: &'static str,
+    pub params: &'static [ParamDoc],
+}
+
+impl FxDoc {
+    pub fn param(&self, unique_name: &str) -> Option<&'static ParamDoc> {
+        self.params.iter().find(|p| p.key == unique_name)
+    }
+}
+
 mod generated {
     use super::*;
     include!(concat!(env!("OUT_DIR"), "/tables.rs"));
 }
 
-pub use generated::{ADDRESSES, COMMANDS, FX_TYPES, PARAMS, PRODUCT, ROOT, SOURCE};
+pub use generated::{
+    ADDRESSES, ASSIGN_CATEGORIES, ASSIGN_TARGETS, COMMANDS, FX_DOCS, FX_TYPES, MASTER, PARAMS, PARAM_DOCS,
+    PARAM_VALUES, PRODUCT, ROOT, SOURCE,
+};
 
 /// Looks up a parameter by its full path (e.g. `Temp_patch.common.Name`).
 pub fn param(path: &str) -> Option<&'static ParamDef> {
     PARAMS.binary_search_by(|p| p.path.cmp(path)).ok().map(|i| &PARAMS[i])
+}
+
+/// Value labels of the parameter at `path`, if it is a list.
+pub fn param_values(path: &str) -> Option<&'static ParamValues> {
+    PARAM_VALUES.binary_search_by(|v| v.path.cmp(path)).ok().map(|i| &PARAM_VALUES[i])
 }
 
 /// The parameter starting exactly at `addr`, if any.
@@ -193,6 +293,36 @@ pub fn fx_type_by_name(name: &str) -> Option<&'static FxTypeDef> {
     FX_TYPES.iter().find(|t| t.name.eq_ignore_ascii_case(name))
 }
 
+/// The guide's text about an FX type (`MASTER` for the patch's master settings).
+pub fn fx_doc(fx_name: &str) -> Option<&'static FxDoc> {
+    FX_DOCS.iter().find(|d| d.fx.eq_ignore_ascii_case(fx_name))
+}
+
+/// The guide's text about a parameter, by path (`Temp_patch.assign(3).SOURCE`).
+pub fn param_doc(path: &str) -> Option<&'static ParamDoc> {
+    let key = doc_key(path);
+    PARAM_DOCS.binary_search_by(|d| d.key.cmp(&key)).ok().map(|i| &PARAM_DOCS[i])
+}
+
+/// `Temp_patch.assign(3).SOURCE` → `Temp_patch.assign(n).SOURCE`.
+pub fn doc_key(path: &str) -> String {
+    let mut out = String::with_capacity(path.len());
+    let mut rest = path;
+    while let Some(i) = rest.find('(') {
+        let (head, tail) = rest.split_at(i + 1);
+        out.push_str(head);
+        match tail.find(')') {
+            Some(j) if j > 0 && tail[..j].bytes().all(|b| b.is_ascii_digit()) => {
+                out.push('n');
+                rest = &tail[j..];
+            }
+            _ => rest = tail,
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -202,6 +332,8 @@ mod tests {
         assert!(PARAMS.windows(2).all(|w| w[0].path < w[1].path));
         assert!(COMMANDS.windows(2).all(|w| w[0].name < w[1].name));
         assert!(ADDRESSES.windows(2).all(|w| w[0].name < w[1].name));
+        assert!(PARAM_VALUES.windows(2).all(|w| w[0].path < w[1].path));
+        assert!(PARAM_DOCS.windows(2).all(|w| w[0].key < w[1].key));
     }
 
     #[test]
@@ -218,6 +350,38 @@ mod tests {
         assert_eq!(root("Temp_patch").unwrap().addr.to_string(), "10 00 00 00");
         assert_eq!(PRODUCT.model_id, crate::sysex::MODEL_ID);
         assert!(param("nope").is_none());
+    }
+
+    #[test]
+    fn value_labels_match_their_parameters() {
+        for v in PARAM_VALUES {
+            let p = param(v.path).unwrap_or_else(|| panic!("labels for unknown parameter {}", v.path));
+            assert_eq!(v.first, p.min, "{}", v.path);
+            assert_eq!(v.labels.len() as i32, p.max - p.min + 1, "{}", v.path);
+            assert_eq!(p.display(p.min), v.labels[0]);
+        }
+        let level = param("Temp_patch.common.Name").unwrap();
+        assert!(level.labels().is_none());
+    }
+
+    #[test]
+    fn doc_keys_generalize_instance_numbers() {
+        assert_eq!(doc_key("Temp_patch.assign(12).SOURCE"), "Temp_patch.assign(n).SOURCE");
+        assert_eq!(doc_key("System_inputSetting(3)._Name(1)"), "System_inputSetting(n)._Name(n)");
+        assert_eq!(doc_key("System_common.AutoOff"), "System_common.AutoOff");
+        assert_eq!(doc_key("odd(x).y("), "odd(x).y(");
+        for d in PARAM_DOCS {
+            assert_eq!(doc_key(d.key), d.key, "doc keys are already generalized");
+        }
+    }
+
+    #[test]
+    fn assign_targets_point_at_categories() {
+        for t in ASSIGN_TARGETS {
+            assert!(t.category == -1 || (t.category as usize) < ASSIGN_CATEGORIES.len(), "{}", t.name);
+        }
+        let named = |n: &str| ASSIGN_CATEGORIES.iter().any(|c| c.block_name == n);
+        assert!(named("MASTER") && named("TUNER") && named("MIDI") && named("----"));
     }
 
     #[test]

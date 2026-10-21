@@ -97,6 +97,12 @@ impl SimulatedGx100 {
         (0..len).map(|i| *self.mem.get(&(addr.linear() + i)).unwrap_or(&0)).collect()
     }
 
+    /// Queues a DT1 as if the pedal sent it on its own (a footswitch press, a pedal move…).
+    pub fn push_unsolicited(&mut self, addr: Address, data: &[u8]) {
+        self.poke(addr, data);
+        self.outbox.push_back(sysex::dt1(self.device_id, addr, data));
+    }
+
     /// Every message received from the host, in order.
     pub fn sent(&self) -> &[Vec<u8>] {
         &self.sent
@@ -126,6 +132,31 @@ impl SimulatedGx100 {
                 for (i, chunk) in data.chunks(self.reply_chunk).enumerate() {
                     let at = addr.offset((i * self.reply_chunk) as u32);
                     self.outbox.push_back(sysex::dt1(self.device_id, at, chunk));
+                }
+            }
+            sysex::DT1 if Some(addr) == tables::command("IS_RQ1_ACCEPT") => {
+                self.outbox.push_back(sysex::dt1(self.device_id, addr, &[1]));
+            }
+            // Like the pedal: WRITE stores the Temp patch into a user patch, then confirms.
+            sysex::DT1 if Some(addr) == tables::command("PATCH_WRITE") && msg.len() >= 17 => {
+                let n = ((msg[13] as u16) << 7 | msg[14] as u16) + 1;
+                if let Some(dst) = patch::user_patch(n) {
+                    let data = self.peek(patch::temp_patch(), patch::patch_span());
+                    self.poke(dst, &data);
+                }
+                self.outbox.push_back(sysex::dt1(self.device_id, addr, &msg[13..15]));
+            }
+            sysex::DT1 if Some(addr) == tables::command("SETTING_WRITE_CMD") => {
+                self.outbox.push_back(sysex::dt1(self.device_id, addr, &[0]));
+            }
+            // Selecting a patch loads it into the Temp patch.
+            sysex::DT1 if tables::param("System_common.CurrentPatchNum").is_some_and(|p| p.addr == addr) => {
+                let data = msg[13..msg.len() - 2].to_vec();
+                self.poke(addr, &data);
+                let p = tables::param("System_common.CurrentPatchNum").unwrap();
+                if let Some(src) = p.spec().decode(&data).ok().and_then(|i| patch::user_patch(i as u16 + 1)) {
+                    let bytes = self.peek(src, patch::patch_span());
+                    self.poke(patch::temp_patch(), &bytes);
                 }
             }
             sysex::DT1 => {

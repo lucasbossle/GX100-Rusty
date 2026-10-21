@@ -1,0 +1,11 @@
+[package]
+name = "gx100-midi"
+version = "0.1.0"
+description = "MIDI transport (midir) for talking to a BOSS GX-100"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+gx100-protocol = { path = "../gx100-protocol" }
+midir = "0.10"

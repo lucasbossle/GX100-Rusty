@@ -12,9 +12,9 @@ path = "src/main.rs"
 
 [features]
 default = ["midi"]
-# Real MIDI I/O via midir. Without it only offline commands and --sim work.
-midi = ["dep:midir"]
+# Real MIDI I/O via gx100-midi (midir). Without it only offline commands and --sim work.
+midi = ["dep:gx100-midi"]
 
 [dependencies]
 gx100-protocol = { path = "../gx100-protocol" }
-midir = { version = "0.10", optional = true }
+gx100-midi = { path = "../gx100-midi", optional = true }

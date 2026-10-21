@@ -18,6 +18,7 @@ pub static COMMANDS: &[NamedAddress] = &[
     NamedAddress { name: "EDITOR_COMMUNICATION_LEVEL", addr: Address::from_wire([0x7f, 0x00, 0x00, 0x00]) },
     NamedAddress { name: "EDITOR_COMMUNICATION_MODE", addr: Address::from_wire([0x7f, 0x00, 0x00, 0x01]) },
     NamedAddress { name: "FACTORY_RESET", addr: Address::from_wire([0x7f, 0x02, 0x00, 0x7c]) },
+    NamedAddress { name: "IS_RQ1_ACCEPT", addr: Address::from_wire([0x7f, 0x00, 0x07, 0x03]) },
     NamedAddress { name: "PATCH_WRITE", addr: Address::from_wire([0x7f, 0x00, 0x01, 0x04]) },
     NamedAddress { name: "RUNNING_MODE", addr: Address::from_wire([0x7f, 0x00, 0x00, 0x02]) },
 ];
@@ -40,13 +41,28 @@ pub static ROOT: &[RootDef] = &[
 pub static PARAMS: &[ParamDef] = &[
     ParamDef { path: "System_common.AutoOff", desc: "AUTO OFF", addr: Address::from_wire([0x00, 0x00, 0x00, 0x0f]), encoding: Encoding::Int1(7), min: 0, max: 4, init: Init::Num(4), ofs: 0, factor: 1 },
     ParamDef { path: "System_common.CurrentPatchNum", desc: "Patch Number", addr: Address::from_wire([0x00, 0x00, 0x00, 0x00]), encoding: Encoding::Int4x4, min: 0, max: 299, init: Init::Num(0), ofs: 0, factor: 1 },
+    ParamDef { path: "Temp_patch.assign(1).MODE", desc: "MODE", addr: Address::from_wire([0x10, 0x00, 0x02, 0x0f]), encoding: Encoding::Int1(7), min: 0, max: 1, init: Init::Num(0), ofs: 0, factor: 1 },
+    ParamDef { path: "Temp_patch.assign(1).SOURCE", desc: "SOURCE", addr: Address::from_wire([0x10, 0x00, 0x02, 0x0e]), encoding: Encoding::Int1(7), min: 0, max: 20, init: Init::Num(16), ofs: 0, factor: 1 },
+    ParamDef { path: "Temp_patch.assign(1).SW", desc: "SW", addr: Address::from_wire([0x10, 0x00, 0x02, 0x00]), encoding: Encoding::Int1(7), min: 0, max: 1, init: Init::Num(0), ofs: 0, factor: 1 },
+    ParamDef { path: "Temp_patch.assign(1).TARGET", desc: "TARGET", addr: Address::from_wire([0x10, 0x00, 0x02, 0x02]), encoding: Encoding::Int4x4, min: 0, max: 9, init: Init::Num(0), ofs: 0, factor: 1 },
+    ParamDef { path: "Temp_patch.assign(1).TARGET_FX_ITEM", desc: "TARGET_FX_ITEM", addr: Address::from_wire([0x10, 0x00, 0x02, 0x01]), encoding: Encoding::Int1(7), min: 0, max: 19, init: Init::Num(0), ofs: 0, factor: 1 },
+    ParamDef { path: "Temp_patch.assign(1).TARGET_MAX", desc: "TARGET MAX", addr: Address::from_wire([0x10, 0x00, 0x02, 0x0a]), encoding: Encoding::Int4x4, min: -32768, max: 32767, init: Init::Num(1), ofs: 32768, factor: 1 },
+    ParamDef { path: "Temp_patch.assign(1).TARGET_MIN", desc: "TARGET MIN", addr: Address::from_wire([0x10, 0x00, 0x02, 0x06]), encoding: Encoding::Int4x4, min: -32768, max: 32767, init: Init::Num(0), ofs: 32768, factor: 1 },
     ParamDef { path: "Temp_patch.common.Level", desc: "Level", addr: Address::from_wire([0x10, 0x00, 0x00, 0x10]), encoding: Encoding::Int2x4, min: 0, max: 200, init: Init::Num(100), ofs: 0, factor: 1 },
     ParamDef { path: "Temp_patch.common.Name", desc: "Patch Name", addr: Address::from_wire([0x10, 0x00, 0x00, 0x00]), encoding: Encoding::Bytes(16), min: 32, max: 126, init: Init::Text("INIT MEMORY     "), ofs: 0, factor: 1 },
+    ParamDef { path: "Temp_patch.efct.ChainNextItem0", desc: "CHAIN NEXT ITEM0", addr: Address::from_wire([0x10, 0x00, 0x0f, 0x0d]), encoding: Encoding::Int1(7), min: -1, max: 48, init: Init::Num(-1), ofs: 1, factor: 1 },
+    ParamDef { path: "Temp_patch.efct.ChainNextItem1", desc: "CHAIN NEXT ITEM1", addr: Address::from_wire([0x10, 0x00, 0x0f, 0x0e]), encoding: Encoding::Int1(7), min: -1, max: 48, init: Init::Num(0), ofs: 1, factor: 1 },
+    ParamDef { path: "Temp_patch.efct.ChainTopItem", desc: "CHAIN TOP ITEM", addr: Address::from_wire([0x10, 0x00, 0x0f, 0x0c]), encoding: Encoding::Int1(7), min: -1, max: 48, init: Init::Num(1), ofs: 1, factor: 1 },
     ParamDef { path: "Temp_patch.fxItem(1).Switch", desc: "Switch", addr: Address::from_wire([0x10, 0x00, 0x11, 0x01]), encoding: Encoding::Int1(7), min: 0, max: 1, init: Init::Num(0), ofs: 0, factor: 1 },
     ParamDef { path: "Temp_patch.fxItem(1).Type", desc: "Type", addr: Address::from_wire([0x10, 0x00, 0x11, 0x00]), encoding: Encoding::Int1(7), min: 0, max: 2, init: Init::Num(0), ofs: 0, factor: 1 },
     ParamDef { path: "Temp_patch.fxItem(1).param(0)", desc: "param", addr: Address::from_wire([0x10, 0x00, 0x11, 0x03]), encoding: Encoding::Int4x4, min: -20000, max: 20000, init: Init::Num(0), ofs: 32768, factor: 1 },
     ParamDef { path: "Temp_patch.fxItem(2).Switch", desc: "Switch", addr: Address::from_wire([0x10, 0x00, 0x13, 0x01]), encoding: Encoding::Int1(7), min: 0, max: 1, init: Init::Num(0), ofs: 0, factor: 1 },
     ParamDef { path: "Temp_patch.fxItem(2).Type", desc: "Type", addr: Address::from_wire([0x10, 0x00, 0x13, 0x00]), encoding: Encoding::Int1(7), min: 0, max: 2, init: Init::Num(0), ofs: 0, factor: 1 },
+];
+
+/// Value labels of list parameters (sorted by path). Synthetic.
+pub static PARAM_VALUES: &[ParamValues] = &[
+    ParamValues { path: "Temp_patch.fxItem(1).Switch", first: 0, labels: &["OFF", "ON"] },
 ];
 
 /// FX types, indexed by the value of `fxItem(n).Type`.
@@ -61,4 +77,45 @@ pub static FX_TYPES: &[FxTypeDef] = &[
         FxParamDef { name: "RATE", unique_name: "rate", field: FxField::Param(0), offset: Address::from_wire([0x00, 0x00, 0x00, 0x03]), encoding: Encoding::Int4x4, min: 400, max: 2500, init: Init::Num(1200), ofs: 32768, factor: 10, values: &[], format: None, template: "40 - 250" },
     ] },
     FxTypeDef { id: 2, name: "FX EMPTY", params: &[] },
+];
+
+/// The patch's MASTER settings as assign targets see them. Synthetic.
+pub static MASTER: FxTypeDef = FxTypeDef { id: 99, name: "MASTER", params: &[
+    FxParamDef { name: "LEVEL", unique_name: "memory-level", field: FxField::Param(0), offset: Address::from_wire([0x00, 0x00, 0x00, 0x03]), encoding: Encoding::Int4x4, min: 0, max: 200, init: Init::Num(100), ofs: 0, factor: 1, values: &[], format: None, template: "0 - 200" },
+] };
+
+/// Assign target categories. Synthetic.
+pub static ASSIGN_CATEGORIES: &[AssignCategoryDef] = &[
+    AssignCategoryDef { name: "ALPHA", has_switch: true, block_name: "FX ALPHA" },
+    AssignCategoryDef { name: "BETA", has_switch: false, block_name: "FX BETA" },
+    AssignCategoryDef { name: "MASTER", has_switch: false, block_name: "MASTER" },
+    AssignCategoryDef { name: "TUNER", has_switch: false, block_name: "TUNER" },
+    AssignCategoryDef { name: "MIDI", has_switch: false, block_name: "MIDI" },
+    AssignCategoryDef { name: "----", has_switch: false, block_name: "----" },
+];
+
+/// Assign targets. Synthetic.
+pub static ASSIGN_TARGETS: &[AssignTargetDef] = &[
+    AssignTargetDef { name: "----", category: 5, effect: false, unique_name: "" },
+    AssignTargetDef { name: "ON/OFF", category: -1, effect: true, unique_name: "off-on" },
+    AssignTargetDef { name: "MODE", category: 0, effect: true, unique_name: "mode" },
+    AssignTargetDef { name: "TONE", category: 0, effect: true, unique_name: "tone" },
+    AssignTargetDef { name: "RATE", category: 1, effect: true, unique_name: "rate" },
+    AssignTargetDef { name: "LEVEL", category: 2, effect: false, unique_name: "memory-level" },
+    AssignTargetDef { name: "ON/OFF", category: 3, effect: false, unique_name: "off-on" },
+    AssignTargetDef { name: "MIDI CC#", category: 4, effect: false, unique_name: "midi-cc#" },
+    AssignTargetDef { name: "MIDI PC#", category: 4, effect: false, unique_name: "midi-pc#" },
+    AssignTargetDef { name: "AMOUNT", category: 0, effect: true, unique_name: "amount" },
+];
+
+/// Guide text. Synthetic.
+pub static FX_DOCS: &[FxDoc] = &[
+    FxDoc { fx: "FX ALPHA", text: "A test effect.", params: &[
+        ParamDoc { key: "mode", text: "Picks how hard it works.", options: &[("SOFT", "Gently."), ("HARD", "Firmly.")] },
+    ] },
+];
+
+/// Guide text about settings. Synthetic.
+pub static PARAM_DOCS: &[ParamDoc] = &[
+    ParamDoc { key: "Temp_patch.assign(n).SOURCE", text: "What moves the target.", options: &[] },
 ];

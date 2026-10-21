@@ -17,7 +17,11 @@ const product = load('product.json');
 const commands = load('commands.json');
 const { root } = load('address_map.blocks.json');
 const flat = load('address_map.flat.json');
-const { effects } = load('effects.json');
+const { effects, master } = load('effects.json');
+// Guide text (tools/extract/manual.mjs); optional.
+const docs = fs.existsSync(path.join(inDir, 'docs.json')) ? load('docs.json') : { fx: [], params: [] };
+const assign = fs.existsSync(path.join(inDir, 'assign.json')) ? load('assign.json') : { categories: [], targets: [] };
+const paramValues = fs.existsSync(path.join(inDir, 'param_values.json')) ? load('param_values.json') : [];
 
 // ---------------------------------------------------------------- literals
 const str = (s) => '"' + String(s ?? '').replace(/[\\"]/g, (c) => '\\' + c)
@@ -99,21 +103,84 @@ const field = (p) => {
   if (p.field === 'Type' || p.field === 'Switch' || p.field === 'DuplicationNumber') return `FxField::${p.field}`;
   throw new Error(`fx param ${p.name}: no field`);
 };
-o.push('/// FX types, indexed by the value of `fxItem(n).Type`.');
-o.push('pub static FX_TYPES: &[FxTypeDef] = &[');
-effects.forEach((fx, i) => {
-  if (fx.typeId !== i) throw new Error(`fx type ${fx.name} out of order`);
-  if (!fx.parameters) { o.push(`    FxTypeDef { id: ${i}, name: ${str(fx.name)}, params: &[] },`); return; }
-  o.push(`    FxTypeDef { id: ${i}, name: ${str(fx.name)}, params: &[`);
+o.push('/// Value labels of list parameters, from the editor\'s UI definition (sorted by path).');
+o.push('pub static PARAM_VALUES: &[ParamValues] = &[');
+for (const v of paramValues) o.push(`    ParamValues { path: ${str(v.path)}, first: ${int(v.first, v.path)}, labels: &[${v.labels.map(str).join(', ')}] },`);
+o.push('];');
+o.push('');
+
+// Labels in stored-value order. Where the editor lists them in another order (indexMachineValue),
+// stored value v is labelled values[indexMachineValue[v]].
+const valuesByMachine = (p) => {
+  if (!Array.isArray(p.values)) return null;
+  const imv = p.indexMachineValue;
+  if (!imv) return p.values;
+  if (imv.length !== p.values.length || [...imv].sort((a, b) => a - b).some((x, i) => x !== i))
+    throw new Error(`fx param ${p.name}: indexMachineValue isn't a permutation of its labels`);
+  return imv.map((pos) => p.values[pos]);
+};
+const fxType = (fx, id, indent) => {
+  if (!fx.parameters) return [`${indent}FxTypeDef { id: ${id}, name: ${str(fx.name)}, params: &[] }`];
+  const lines = [`${indent}FxTypeDef { id: ${id}, name: ${str(fx.name)}, params: &[`];
   for (const p of fx.parameters) {
-    const values = Array.isArray(p.values) ? `&[${p.values.map(str).join(', ')}]` : '&[]';
-    o.push(`        FxParamDef { name: ${str(p.name)}, unique_name: ${str(p.uniqueName)}, field: ${field(p)}, offset: ${wire(p.offsetInFxItem)}, ` +
+    const v = valuesByMachine(p);
+    const values = v ? `&[${v.map(str).join(', ')}]` : '&[]';
+    lines.push(`${indent}    FxParamDef { name: ${str(p.name)}, unique_name: ${str(p.uniqueName)}, field: ${field(p)}, offset: ${wire(p.offsetInFxItem)}, ` +
       `encoding: ${encoding(p.encoding, p.bytes)}, min: ${int(p.min, p.name)}, max: ${int(p.max, p.name)}, init: ${init(p.init)}, ` +
       `ofs: ${int(p.ofs ?? 0, p.name)}, factor: ${int(p.factor ?? 1, p.name)}, values: ${values}, ` +
       `format: ${p.format ? `Some(${str(p.format)})` : 'None'}, template: ${str(p.template)} },`);
   }
-  o.push('    ] },');
+  lines.push(`${indent}] }`);
+  return lines;
+};
+o.push('/// FX types, indexed by the value of `fxItem(n).Type`.');
+o.push('pub static FX_TYPES: &[FxTypeDef] = &[');
+effects.forEach((fx, i) => {
+  if (fx.typeId !== i) throw new Error(`fx type ${fx.name} out of order`);
+  const lines = fxType(fx, i, '    ');
+  lines[lines.length - 1] += ',';
+  o.push(...lines);
 });
+o.push('];');
+o.push('');
+
+o.push('/// The patch\'s MASTER settings (level, BPM, key…) as assign targets see them. Offsets are meaningless.');
+if (master && master.parameters) {
+  const lines = fxType(master, 99, '');
+  lines[0] = 'pub static MASTER: FxTypeDef = ' + lines[0];
+  lines[lines.length - 1] += ';';
+  o.push(...lines);
+} else o.push('pub static MASTER: FxTypeDef = FxTypeDef { id: 99, name: "MASTER", params: &[] };');
+o.push('');
+
+o.push('/// Assign target categories, indexed by `AssignTargetDef::category`.');
+o.push('pub static ASSIGN_CATEGORIES: &[AssignCategoryDef] = &[');
+for (const c of assign.categories)
+  o.push(`    AssignCategoryDef { name: ${str(c.name)}, has_switch: ${c.hasSwitch}, block_name: ${str(c.blockName)} },`);
+o.push('];');
+o.push('');
+o.push('/// Assign targets, indexed by the value of `assign(n).TARGET`.');
+o.push('pub static ASSIGN_TARGETS: &[AssignTargetDef] = &[');
+for (const t of assign.targets)
+  o.push(`    AssignTargetDef { name: ${str(t.name)}, category: ${int(t.category, t.name)}, effect: ${t.effect}, unique_name: ${str(t.uniqueName)} },`);
+o.push('];');
+
+o.push('');
+
+const paramDoc = (d, indent) => `${indent}ParamDoc { key: ${str(d.key)}, text: ${str(d.text)}, options: &[` +
+  d.options.map(([l, t]) => `(${str(l)}, ${str(t)})`).join(', ') + '] },';
+o.push('/// The parameter guide\'s text about each FX type and its parameters.');
+o.push('pub static FX_DOCS: &[FxDoc] = &[');
+for (const f of docs.fx) {
+  o.push(`    FxDoc { fx: ${str(f.fx)}, text: ${str(f.text)}, params: &[`);
+  for (const d of f.params) o.push(paramDoc(d, '        '));
+  o.push('    ] },');
+}
+o.push('];');
+o.push('');
+o.push('/// The parameter guide\'s text about patch and system settings, by generalized path (sorted).');
+o.push('pub static PARAM_DOCS: &[ParamDoc] = &[');
+for (const d of [...docs.params].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))) o.push(paramDoc(d, '    '));
 o.push('];');
 
 fs.mkdirSync(path.dirname(outFile), { recursive: true });

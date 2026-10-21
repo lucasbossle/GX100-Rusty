@@ -6,7 +6,7 @@ use midir::{Ignore, MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnec
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::time::Duration;
 
-const CLIENT: &str = "gx100-cli";
+const CLIENT: &str = "gx100";
 
 pub struct MidiTransport {
     _input: MidiInputConnection<()>,
@@ -49,6 +49,12 @@ fn not_found(kind: &str, filter: Option<&str>, names: &[String]) -> String {
 }
 
 pub fn open(filter: Option<&str>) -> Result<MidiTransport, String> {
+    open_with_waker(filter, || {})
+}
+
+/// Like [`open`], but calls `wake` (on the MIDI thread) after each complete incoming message,
+/// so a caller can sleep until the pedal sends something instead of polling.
+pub fn open_with_waker(filter: Option<&str>, wake: impl Fn() + Send + 'static) -> Result<MidiTransport, String> {
     let mut mi = MidiInput::new(CLIENT).map_err(|e| e.to_string())?;
     // Keep SysEx; drop clock and active sensing.
     mi.ignore(Ignore::TimeAndActiveSense);
@@ -70,6 +76,7 @@ pub fn open(filter: Option<&str>) -> Result<MidiTransport, String> {
             move |_stamp, bytes, _| {
                 for m in asm.push(bytes) {
                     let _ = tx.send(m);
+                    wake();
                 }
             },
             (),

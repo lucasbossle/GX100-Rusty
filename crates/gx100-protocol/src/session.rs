@@ -5,6 +5,7 @@ use crate::address::Address;
 use crate::sysex::{self, IdentityReply, Message};
 use crate::tables::{self, ParamDef};
 use crate::value::ValueError;
+use std::collections::VecDeque;
 use std::fmt;
 use std::time::{Duration, Instant};
 
@@ -14,6 +15,16 @@ pub trait Transport {
     fn send(&mut self, msg: &[u8]) -> std::result::Result<(), String>;
     /// The next complete MIDI message, or `None` once `timeout` elapses.
     fn recv(&mut self, timeout: Duration) -> std::result::Result<Option<Vec<u8>>, String>;
+}
+
+/// Lets a `Device<Box<dyn Transport>>` switch between MIDI and the simulator at run time.
+impl<T: Transport + ?Sized> Transport for Box<T> {
+    fn send(&mut self, msg: &[u8]) -> std::result::Result<(), String> {
+        (**self).send(msg)
+    }
+    fn recv(&mut self, timeout: Duration) -> std::result::Result<Option<Vec<u8>>, String> {
+        (**self).recv(timeout)
+    }
 }
 
 #[derive(Debug)]
@@ -78,12 +89,22 @@ impl fmt::Display for ParamValue {
     }
 }
 
+/// A DT1 the pedal sent on its own, e.g. because a footswitch or the expression pedal changed a
+/// parameter (sent while editor mode is on, see [`Device::set_editor_mode`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Notification {
+    pub addr: Address,
+    pub data: Vec<u8>,
+}
+
 /// Largest data payload per DT1 we send (the editor's `SYSEX_MAXLEN`).
 pub const MAX_DT1_DATA: usize = 128;
 /// MIDI DIN speed in bytes/s; the editor paces its output to this.
 const BYTES_PER_SEC: u64 = 3125;
 /// Commands that may be sent through [`Device::send_command`].
-const ALLOWED_COMMANDS: &[&str] = &["EDITOR_COMMUNICATION_MODE", "RUNNING_MODE", "EDITOR_PAGE", "TUNER"];
+/// `IS_RQ1_ACCEPT` is a status query: the pedal answers whether it can serve reads right now.
+const ALLOWED_COMMANDS: &[&str] =
+    &["EDITOR_COMMUNICATION_MODE", "RUNNING_MODE", "EDITOR_PAGE", "TUNER", "IS_RQ1_ACCEPT"];
 
 /// A GX-100 reached through a [`Transport`].
 pub struct Device<T: Transport> {
@@ -92,6 +113,8 @@ pub struct Device<T: Transport> {
     timeout: Duration,
     pace: bool,
     next_send: Instant,
+    /// Unsolicited DT1s that arrived while waiting for something else.
+    notifications: VecDeque<Notification>,
 }
 
 impl<T: Transport> Device<T> {
@@ -102,6 +125,7 @@ impl<T: Transport> Device<T> {
             timeout: Duration::from_secs(2),
             pace: true,
             next_send: Instant::now(),
+            notifications: VecDeque::new(),
         }
     }
 
@@ -143,10 +167,8 @@ impl<T: Transport> Device<T> {
 
     fn next_message(&mut self, deadline: Instant) -> Result<Option<Message>> {
         loop {
+            // A zero timeout still picks up a message that is already waiting.
             let left = deadline.saturating_duration_since(Instant::now());
-            if left.is_zero() {
-                return Ok(None);
-            }
             match self.transport.recv(left).map_err(Error::Transport)? {
                 None => return Ok(None),
                 // Malformed messages (bad checksum…) are skipped, as the editor does.
@@ -165,12 +187,13 @@ impl<T: Transport> Device<T> {
         let deadline = Instant::now() + self.timeout;
         let mut other = None;
         while let Some(m) = self.next_message(deadline)? {
-            if let Message::IdentityReply(r) = m {
-                if r.is_gx100() {
+            match m {
+                Message::IdentityReply(r) if r.is_gx100() => {
                     self.device_id = r.device_id;
                     return Ok(r);
                 }
-                other = Some(r);
+                Message::IdentityReply(r) => other = Some(r),
+                m => self.keep_notification(m),
             }
         }
         Err(other.map(Error::NotGx100).unwrap_or_else(|| Error::Timeout("identity request".into())))
@@ -199,6 +222,11 @@ impl<T: Transport> Device<T> {
             if device_id != self.device_id && device_id != 0x7F {
                 continue;
             }
+            let (at_start, at_end) = (at.linear(), at.linear() + data.len() as u32);
+            if at_end <= start || end <= at_start {
+                self.notifications.push_back(Notification { addr: at, data });
+                continue;
+            }
             for (i, &b) in data.iter().enumerate() {
                 let pos = at.linear() + i as u32;
                 if (start..end).contains(&pos) {
@@ -213,6 +241,101 @@ impl<T: Transport> Device<T> {
             deadline = Instant::now() + self.timeout;
         }
         Ok(buf)
+    }
+
+    fn keep_notification(&mut self, m: Message) {
+        if let Message::Dt1 { device_id, addr, data } = m {
+            if device_id == self.device_id || device_id == 0x7F {
+                self.notifications.push_back(Notification { addr, data });
+            }
+        }
+    }
+
+    /// The next DT1 the pedal sent on its own, waiting up to `timeout` for one.
+    /// Returns queued ones (that arrived during a read) first. Sends nothing.
+    pub fn next_notification(&mut self, timeout: Duration) -> Result<Option<Notification>> {
+        if let Some(n) = self.notifications.pop_front() {
+            return Ok(Some(n));
+        }
+        let deadline = Instant::now() + timeout;
+        while let Some(m) = self.next_message(deadline)? {
+            self.keep_notification(m);
+            if let Some(n) = self.notifications.pop_front() {
+                return Ok(Some(n));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Waits until the pedal accepts reads again. It doesn't right after a patch change or a write;
+    /// like the official editor, ask `IS_RQ1_ACCEPT` every 250 ms, for up to 10 s.
+    pub fn wait_until_ready(&mut self) -> Result<()> {
+        for _ in 0..40 {
+            if self.rq1_accepted()? {
+                return Ok(());
+            }
+            std::thread::sleep(Duration::from_millis(250));
+        }
+        Err(Error::Timeout("the pedal stayed busy".into()))
+    }
+
+    /// Sends a store command and waits for the pedal's DT1 at the same address, which it sends when done.
+    fn store_command(&mut self, name: &str, data: &[u8], timeout: Duration) -> Result<()> {
+        let addr = tables::command(name).ok_or_else(|| Error::Unknown(format!("command {name}")))?;
+        self.write_unchecked(addr, data)?;
+        let deadline = Instant::now() + timeout;
+        while let Some(m) = self.next_message(deadline)? {
+            match m {
+                Message::Dt1 { addr: at, .. } if at == addr => return Ok(()),
+                m => self.keep_notification(m),
+            }
+        }
+        Err(Error::Timeout(format!("{name} not confirmed")))
+    }
+
+    /// Stores the live (Temp) patch into user patch `n` (1-based), named `name`, the way the official
+    /// editor's WRITE does (`patch_controller.js` `writePatch`): the name goes into the Temp patch,
+    /// then `PATCH_WRITE` with the 0-based patch index as two 7-bit bytes; the pedal confirms with a DT1
+    /// at `PATCH_WRITE`, then stays busy for a moment.
+    pub fn save_temp_patch(&mut self, n: u16, name: &str) -> Result<()> {
+        if !(1..=crate::patch::USER_PATCHES).contains(&n) {
+            return Err(Error::Refused(format!("there is no user patch {n}")));
+        }
+        let p = tables::param("Temp_patch.common.Name").ok_or_else(|| Error::Unknown("patch name parameter".into()))?;
+        self.write_param(p, &ParamValue::Text(name.to_string()))?;
+        let i = n - 1;
+        self.store_command("PATCH_WRITE", &[(i >> 7) as u8 & 0x7F, i as u8 & 0x7F], Duration::from_secs(5))?;
+        self.wait_until_ready()
+    }
+
+    /// Stores the current input settings (`Setup_efct`) into the input-setting slot selected by
+    /// `System_control.InputSettingNum`, named `name`, as the official editor does
+    /// (`input_setting_controller.js` `writeToSetting`).
+    pub fn save_input_setting(&mut self, name: &str) -> Result<()> {
+        let name_addr =
+            tables::command("SETTING_WRITE_NAME").ok_or_else(|| Error::Unknown("command SETTING_WRITE_NAME".into()))?;
+        let mut bytes: Vec<u8> =
+            name.chars().filter(|c| c.is_ascii() && !c.is_ascii_control()).map(|c| c as u8).collect();
+        bytes.resize(16, b' ');
+        bytes.truncate(16);
+        self.write_unchecked(name_addr, &bytes)?;
+        self.store_command("SETTING_WRITE_CMD", &[0], Duration::from_secs(5))?;
+        self.wait_until_ready()
+    }
+
+    /// Asks whether the pedal can serve reads now. It says no while busy, e.g. right after a
+    /// patch change; the official editor checks this before re-reading the Temp patch.
+    pub fn rq1_accepted(&mut self) -> Result<bool> {
+        let addr = tables::command("IS_RQ1_ACCEPT").ok_or_else(|| Error::Unknown("command IS_RQ1_ACCEPT".into()))?;
+        self.send_command("IS_RQ1_ACCEPT", &[0])?;
+        let deadline = Instant::now() + self.timeout;
+        while let Some(m) = self.next_message(deadline)? {
+            match m {
+                Message::Dt1 { addr: at, data, .. } if at == addr && !data.is_empty() => return Ok(data[0] == 1),
+                m => self.keep_notification(m),
+            }
+        }
+        Err(Error::Timeout("IS_RQ1_ACCEPT".into()))
     }
 
     /// Writes raw data. Refuses the `7F xx xx xx` command space: use
@@ -348,6 +471,24 @@ mod tests {
         assert!(d.transport().sent().is_empty());
         d.set_editor_mode(true).unwrap();
         assert_eq!(d.transport().sent().len(), 1);
+    }
+
+    #[test]
+    fn unsolicited_dt1s_survive_reads() {
+        let mut sim = SimulatedGx100::new();
+        let elsewhere = Address::from_wire([0x10, 0x00, 0x11, 0x01]);
+        sim.push_unsolicited(elsewhere, &[1]);
+        let mut d = dev(sim);
+        d.read(Address::from_wire([0x10, 0, 0, 0]), 16).unwrap();
+        let n = d.next_notification(Duration::ZERO).unwrap().unwrap();
+        assert_eq!(n, Notification { addr: elsewhere, data: vec![1] });
+        assert_eq!(d.next_notification(Duration::from_millis(10)).unwrap(), None);
+    }
+
+    #[test]
+    fn rq1_accept() {
+        let mut d = dev(SimulatedGx100::new());
+        assert!(d.rq1_accepted().unwrap());
     }
 
     #[test]

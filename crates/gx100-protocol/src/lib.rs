@@ -6,9 +6,15 @@
 //! - [`tables`]: every parameter, command and FX type (generated)
 //! - [`session`]: a [`session::Device`] on top of any [`session::Transport`]
 //! - [`patch`]: patch and FX-slot helpers
+//! - [`assign`]: the 20 assigns of a patch: targets, and the messages an edit sends
+//! - [`backup`]: what a full backup holds, reading the system areas
+//! - [`librarian`]: planning a reorder/rewrite of user patches (no writes yet)
 //! - [`sim`]: an in-memory pedal for tests and offline use
 
 pub mod address;
+pub mod assign;
+pub mod backup;
+pub mod librarian;
 pub mod patch;
 pub mod session;
 pub mod sim;

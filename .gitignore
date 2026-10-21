@@ -1,5 +1,17 @@
-# Derived from Roland's BOSS TONE STUDIO files — keep local, never publish.
+# Generated from Roland's BOSS TONE STUDIO and parameter guide: keep local, never publish.
 /extracted/
+
+# Build output
 /target/
 node_modules/
+
+# Pedal data (backups, setlist exports) shouldn't end up in the repo by accident
+*.alb
+*.tsl
+
+# Editors and OS files
 .DS_Store
+.idea/
+.vscode/
+*.swp
+*~
