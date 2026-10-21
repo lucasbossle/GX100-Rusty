@@ -35,20 +35,29 @@ People run this against their own pedal and their own patches.
 ### 3. Code
 
 - The protocol crate (`crates/gx100-protocol`) has **no dependencies**. Keep it that way.
+- JavaScript only runs in `gx100-extract`, once, on BOSS TONE STUDIO's configuration files. The editor itself is
+  plain Rust.
 - Format with `cargo fmt` (`max_width = 120`), keep `cargo clippy --workspace --all-targets` clean.
 - Match the style around you: small functions, comments that explain *why*.
 
 ## Development setup
 
+You need Rust 1.95+ and BOSS TONE STUDIO for GX-100 installed (the app and CLI read their tables from it, see
+`crates/gx100-extract`). Node.js 18+ is only needed for the development tools in `tools/extract/`.
+
 ```sh
-node tools/extract/extract.mjs          # real tables (needs BOSS TONE STUDIO installed)
-cargo test                              # with your real tables
-GX100_TABLES=$PWD/crates/gx100-protocol/fixtures/tables.rs cargo test -p gx100-protocol   # synthetic tables (as CI)
+cargo test                              # synthetic fixture tables (what CI would use)
+node tools/extract/extract.mjs          # real tables → extracted/tables.json (+ intermediate JSON to inspect)
+GX100_TABLES=$PWD/extracted/tables.json cargo test --workspace     # the same tests on the real tables
 cargo clippy --workspace --all-targets
 cargo run -p gx100-gui -- --sim         # the editor against the simulated pedal
+cargo test --release -p gx100-extract -- --ignored   # boa's extraction == Node's (needs BOSS TONE STUDIO)
 ```
 
-Run the protocol tests on **both** table sets. The GUI tests need the real tables.
+Run the tests on **both** table sets. A few GUI tests skip themselves on the fixture (they need the real tables).
+
+If you change `tools/extract/core.js`, it runs in two engines (Node and boa, the latter at the app's first launch):
+check both still agree with the ignored test above.
 
 Useful while working on the protocol:
 

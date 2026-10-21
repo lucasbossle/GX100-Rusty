@@ -7,11 +7,12 @@ rust-version.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "gx100-editor"
+name = "gx100-rusty"
 path = "src/main.rs"
 
 [dependencies]
 gx100-protocol = { path = "../gx100-protocol" }
+gx100-extract = { path = "../gx100-extract" }
 gx100-midi = { path = "../gx100-midi" }
 eframe = "0.37"
 serde = { version = "1.0.229", features = ["derive"] }

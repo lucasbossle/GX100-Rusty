@@ -1,30 +1,27 @@
 # CLAUDE.md — context for Claude Code sessions
 
 ## Goal
-Rebuild BOSS TONE STUDIO (BTS) for GX-100 as a Rust app (no JS at runtime), then extend it with features the official
-editor lacks. The owner is investigating/learning: prefer small, verifiable steps, explain findings, and verify on the
+Rebuild BOSS TONE STUDIO (BTS) for GX-100 as a Rust app, then extend it with features the official
+editor lacks. Published as **GX100-Rusty** (public, https://github.com/lucasbossle/GX100-Rusty, branch `master`, MIT OR
+Apache-2.0, macOS release zips on GitHub). The only JS that ever runs is BTS's own configuration scripts, once, to
+read the tables (owner approved the embedded engine on 2026-10-20). The owner is investigating/learning: prefer small, verifiable steps, explain findings, and verify on the
 real pedal (read-only first, then no-op writes) before calling something done.
 
 ## Next session: start here
-State on 2026-10-20 (second session): everything builds, 63 tests pass (53 protocol + 10 GUI, 1 ignored), clippy
-clean. Protocol tests run on both table sets; the GUI tests need the real tables (the fixture lacks system params).
-**Nothing is committed yet** (`Cargo.lock` untracked — it should be committed). Ask the owner before committing.
+State on 2026-10-20 (third session): repo public, v0.1.0 released for macOS. 55 protocol + 1 extract (+1 ignored) + 10 GUI
+tests pass on both table sets (`cargo test` = fixture; `GX100_TABLES=$PWD/extracted/tables.json cargo test
+--workspace` = real), clippy clean. Ask the owner before committing/pushing.
 
-Done this session (needs the owner's eyes / hardware check):
-- **Assigns** (CTL/EXP → "Assigns"): list of the 20 assigns + editor (category from the patch's chain + MASTER/TUNER/
-  MIDI, target, min/max in the target parameter's units, source, mode, act range, input sens, internal/wave pedal,
-  MIDI CC/PC). Greys out what doesn't apply, as BTS does. Writes mirror BTS (see Protocol facts). Read side verified on
-  the pedal (`patch` now prints assigns). **Writes only simulator-tested**: `write-check` now also writes assign 1 back
-  with BTS's exact messages.
-- **Parameter guide text**: `node tools/extract/manual.mjs` fetches Roland's online parameter guide into
-  `extracted/manual/` and `extracted/docs.json` (gitignored; approach chosen: keep Roland's text out of git), then
-  regenerates tables.rs with `FX_DOCS` / `PARAM_DOCS`. UI: effect description under the FX heading and in the chain
-  block's tooltip; hover a parameter name for its explanation; hover a list option for its explanation; the chosen
-  option's explanation (e.g. which real pedal or amp it models) shows under list parameters. Coverage: 772/821 FX params,
-  188 settings (`tools/extract/manual_map.mjs` maps guide rows → our paths). `--dump` lists what didn't match.
-- **Fixed list labels**: AIRD PREAMP TYPE 9–22, OVERDRIVE TYPE 4–8, DISTORTION TYPE 1–7 and MIC TYPE 4–8 were shown
-  with the wrong names (BTS's `indexMachineValue` reorder; now applied by gen_rust). Labels added for 208 more params
-  (assign fields of all 20 assigns, SOURCE, WAVE RATE, MIDI CH, BANK MSB/LSB…).
+Done in the third session:
+- **Tables at run time** (so the release contains nothing of Roland's): `tools/extract/core.js` (engine-neutral
+  extraction, shared) → JSON bundle → `tables::from_json` → `tables::install`. `gx100-extract` runs core.js in boa at
+  first launch (1.3 s release / ~8 s debug), caches `~/Library/Application Support/gx100-editor/tables/tables.json`
+  (+ optional `docs.json` beside it), re-extracts when BTS's version/build changes. Verified identical to the Node
+  output (ignored test `matches_the_node_tool`) and to the old generated tables (one-off field-by-field comparison).
+  GUI shows a first-launch screen (`setup.rs`: spinner / "BOSS TONE STUDIO is needed" + Locate…). CLI: `--bts`.
+- **Release**: `tools/macos/bundle.sh` → universal `dist/GX100-Rusty.app` (ad-hoc signed, macOS 11+) + zip. Binary
+  checked: no guide text, no table strings beyond the parameter paths our code names.
+- Assign writes verified on the pedal; live "now" column on the Assigns page; README/CONTRIBUTING for open source.
 
 Open items, in order:
 1. **Try the Assigns page on the pedal**: the "now" column (and "Now" row in the editor) shows each FX/MASTER
@@ -38,6 +35,9 @@ Open items, in order:
    `led.OnOffState`; Restore from backup (writes; same block order as the librarian); `.tsl` live-set import/export;
    optionally save backups as `.alb` so BTS can restore them; HARMONIST "canShift" target names (BTS renames some
    harmonist targets by key); KNOB SETTINGS (not traced yet).
+4. Release follow-ups: descriptions in the release (in-app download of the parameter guide: needs an HTTP client and
+   running manual.mjs's parsing in boa); app icon; CI (GitHub Actions: fmt, clippy, tests on the fixture); Windows/
+   Linux (find BTS there; bundle); Developer ID signing/notarization if the owner gets one.
 
 ## How we got here
 BTS (`/Applications/BOSS/GX-100/BOSS TONE STUDIO for GX-100.app`) is a macOS WKWebView shell around plain HTML/JS in
@@ -55,13 +55,15 @@ BTS (`/Applications/BOSS/GX-100/BOSS TONE STUDIO for GX-100.app`) is a macOS WKW
 - `bg777-pc.elf` (JSON) — the GX-100 UI definition: pages of widgets bound to parameters (`parameter-id`
   "System_control%29" = block + decimal offset) with label lists (`resource-id` → `js/config/resource.js`).
   `bg709-pc.elf` is another model (differs e.g. in AutoOff range).
-`tools/extract/extract.mjs` runs those files in a Node `vm` sandbox and emits `extracted/*.json` +
-`extracted/tables.rs` (via `gen_rust.mjs`). Node was installed with Homebrew on 2026-10-19 (owner approved).
+`tools/extract/core.js` runs those files (`extractTables(host)` + `tablesBundle`); hosts: `extract.mjs` (Node `vm`
+sandbox, writes `extracted/*.json` incl. `tables.json`) and `gx100-extract` (boa). Node was installed with Homebrew on
+2026-10-19 (owner approved); it's only needed for development tools now.
 
 ## Layout
 - `crates/gx100-protocol` — **dependency-free** lib:
-  - `address`, `sysex` (incl. `SysexAssembler`), `value` (encodings), `tables` (generated, `include!`d by build.rs;
-    `PARAMS`, `FX_TYPES`, `ROOT`, `COMMANDS`, `ADDRESSES`, `PARAM_VALUES` + `ParamDef::display/labels`,
+  - `address`, `sysex` (incl. `SysexAssembler`), `value` (encodings), `json` (small reader), `tables` (runtime:
+    `from_json`/`load_file`/`install`/`get`; without install: `$GX100_TABLES` else the fixture. `PARAMS` etc. are
+    `Table<T>` deref views (`PARAMS.iter()`, `*SOURCE`); `PARAMS`, `FX_TYPES`, `ROOT`, `COMMANDS`, `ADDRESSES`, `PARAM_VALUES` + `ParamDef::display/labels`,
     `MASTER` (patch master settings as an FX-like type, for assign ranges), `ASSIGN_CATEGORIES/TARGETS`,
     `FX_DOCS`/`PARAM_DOCS` + `fx_doc`, `param_doc`)
   - `session` — `Device<T: Transport>`: read/write, `identify`, editor mode, notification queue
@@ -97,7 +99,10 @@ BTS (`/Applications/BOSS/GX-100/BOSS TONE STUDIO for GX-100.app`) is a macOS WKW
     save input setting, confirm setlist write).
   - `app/assigns.rs` — CTL/EXP → Assigns page.
   - `app/setlists.rs` — Setlists tab; `app/backups.rs` — Backups tab; `store.rs` — persistence.
-- `crates/gx100-protocol/fixtures/` — SYNTHETIC tables used when `extracted/tables.rs` is absent (CI/tests)
+- `crates/gx100-protocol/fixtures/{tables,docs}.json` — SYNTHETIC tables (made-up FX), embedded as the fallback
+- `crates/gx100-extract` — boa + dirs: `find_app`, `app_version`, `extract` (core.js in boa), `prepare` (env → cache
+  → extract), `cache_dir`. Used by CLI and GUI.
+- `tools/macos/bundle.sh` — universal .app + zip in `dist/` (gitignored)
 
 ## The GUI today (what each tab does)
 - **Patch** (live editor): always shows the patch active on the pedal ("005 BARCHETTA · active on the pedal"),
@@ -130,7 +135,8 @@ BTS (`/Applications/BOSS/GX-100/BOSS TONE STUDIO for GX-100.app`) is a macOS WKW
   hex patch data, atomic writes (tmp + rename), unreadable files reported but not fatal.
 
 ## Verification status (2026-10-20, second session)
-- Tests: 53 protocol (real tables and fixture: `GX100_TABLES=$PWD/crates/gx100-protocol/fixtures/tables.rs`), 10 GUI
+- Tests: 55 protocol (fixture by default; real with `GX100_TABLES=$PWD/extracted/tables.json`), 10 GUI (3 skip on
+  the fixture)
   (store round-trips incl. `.alb`, export/import, worker events, backup job, setlist job, write guard).
   Ignored test `same_pedal_boss_and_ours_match` compares a real `.alb` with our backup:
   `GX100_ALB=… GX100_OURS=… cargo test -p gx100-gui -- --ignored same_pedal`.
@@ -185,11 +191,14 @@ BTS (`/Applications/BOSS/GX-100/BOSS TONE STUDIO for GX-100.app`) is a macOS WKW
 
 ## Commands
 ```sh
-node tools/extract/extract.mjs        # regenerate tables (and labels) after a BTS update
-node tools/extract/manual.mjs         # fetch the parameter guide → descriptions (--refresh, --dump)
-cargo test                            # + GX100_TABLES=$PWD/crates/gx100-protocol/fixtures/tables.rs for the fixture
+node tools/extract/extract.mjs        # tables via Node → extracted/ (tables.json + intermediate JSON)
+node tools/extract/manual.mjs         # fetch the parameter guide → extracted/docs.json (--refresh, --dump);
+                                      # copy it to ~/Library/Application Support/gx100-editor/tables/ for the app
+cargo test                            # fixture; GX100_TABLES=$PWD/extracted/tables.json cargo test --workspace = real
+cargo test --release -p gx100-extract -- --ignored   # boa extraction == Node output
+./tools/macos/bundle.sh               # release build: dist/GX100-Rusty.app + zip
 cargo clippy --workspace --all-targets
-cargo run -p gx100-gui                # the editor (add `-- --sim` for the simulator)
+cargo run -p gx100-gui                # the editor (binary gx100-rusty) (add `-- --sim` for the simulator)
 cargo run -p gx100-cli -- hello       # real pedal, read-only
 cargo run -p gx100-cli -- patch 132   # dump a stored patch incl. its assigns (no number: the live patch)
 cargo run -p gx100-cli -- monitor 30  # print what the pedal pushes (editor mode on, then off)
@@ -199,7 +208,8 @@ Quit the GUI (⌘Q) before using the CLI on the pedal: two programs toggling edi
 skips its exit hook (the pedal then stays in editor mode until the next connect).
 
 ## Rules
-- Never commit `extracted/` or anything copied from Roland's app or manuals (gitignored). Fixture data must stay
+- Never commit `extracted/` or anything copied from Roland's app or manuals (gitignored), and never ship it in a
+  release: the app reads the tables from the user's BTS. Commit as the GitHub no-reply identity (repo-local config). Fixture data must stay
   synthetic (including the fixture's doc strings). `manual_map.mjs` holds only guide row names → our paths. Menu contents in our code are lists of parameter paths (our design); labels come from the extractor.
 - Safety: `Device::write` refuses `7F xx xx xx`; `send_command` has an allowlist (`EDITOR_COMMUNICATION_MODE`,
   `RUNNING_MODE`, `EDITOR_PAGE`, `TUNER`, `IS_RQ1_ACCEPT`). Store commands get a dedicated, traced, tested method

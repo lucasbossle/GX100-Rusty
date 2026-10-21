@@ -1,0 +1,504 @@
+{
+ "format": 1,
+ "fixture": true,
+ "_note": "SYNTHETIC test tables: made-up effects and values, nothing from the official editor.",
+ "product": {
+  "name": "GX-100",
+  "btsVersion": "0.0.0",
+  "btsBuild": "0",
+  "modelId": "000000000B",
+  "deviceId": "10",
+  "communicationLevel": 3,
+  "familyCode": "0B04"
+ },
+ "commands": {
+  "commands": {
+   "EDITOR_COMMUNICATION_LEVEL": "7F 00 00 00",
+   "EDITOR_COMMUNICATION_MODE": "7F 00 00 01",
+   "FACTORY_RESET": "7F 02 00 7C",
+   "IS_RQ1_ACCEPT": "7F 00 07 03",
+   "PATCH_WRITE": "7F 00 01 04",
+   "RUNNING_MODE": "7F 00 00 02"
+  },
+  "addresses": {
+   "CHAIN": "10 00 0F 00",
+   "CURRENT_PATCH_NAME": "10 00 00 00"
+  }
+ },
+ "root": [
+  {
+   "addr": "00 00 00 00",
+   "name": "System_common",
+   "block": "SystemCommon",
+   "size": "00 00 00 10"
+  },
+  {
+   "addr": "10 00 00 00",
+   "name": "Temp_patch",
+   "block": "Patch",
+   "size": "00 00 38 33"
+  },
+  {
+   "addr": "20 00 00 00",
+   "name": "User_patch(1)",
+   "block": "Patch",
+   "size": "00 00 38 33"
+  },
+  {
+   "addr": "20 06 00 00",
+   "name": "User_patch(2)",
+   "block": "Patch",
+   "size": "00 00 38 33"
+  }
+ ],
+ "params": [
+  {
+   "addr": "00 00 00 0F",
+   "path": "System_common.AutoOff",
+   "desc": "AUTO OFF",
+   "encoding": "INTEGER1x7",
+   "bytes": 1,
+   "min": 0,
+   "max": 4,
+   "init": 4,
+   "ofs": 0,
+   "factor": 1
+  },
+  {
+   "addr": "00 00 00 00",
+   "path": "System_common.CurrentPatchNum",
+   "desc": "Patch Number",
+   "encoding": "INTEGER4x4",
+   "bytes": 4,
+   "min": 0,
+   "max": 299,
+   "init": 0,
+   "ofs": 0,
+   "factor": 1
+  },
+  {
+   "addr": "10 00 02 0F",
+   "path": "Temp_patch.assign(1).MODE",
+   "desc": "MODE",
+   "encoding": "INTEGER1x7",
+   "bytes": 1,
+   "min": 0,
+   "max": 1,
+   "init": 0,
+   "ofs": 0,
+   "factor": 1
+  },
+  {
+   "addr": "10 00 02 0E",
+   "path": "Temp_patch.assign(1).SOURCE",
+   "desc": "SOURCE",
+   "encoding": "INTEGER1x7",
+   "bytes": 1,
+   "min": 0,
+   "max": 20,
+   "init": 16,
+   "ofs": 0,
+   "factor": 1
+  },
+  {
+   "addr": "10 00 02 00",
+   "path": "Temp_patch.assign(1).SW",
+   "desc": "SW",
+   "encoding": "INTEGER1x7",
+   "bytes": 1,
+   "min": 0,
+   "max": 1,
+   "init": 0,
+   "ofs": 0,
+   "factor": 1
+  },
+  {
+   "addr": "10 00 02 02",
+   "path": "Temp_patch.assign(1).TARGET",
+   "desc": "TARGET",
+   "encoding": "INTEGER4x4",
+   "bytes": 4,
+   "min": 0,
+   "max": 9,
+   "init": 0,
+   "ofs": 0,
+   "factor": 1
+  },
+  {
+   "addr": "10 00 02 01",
+   "path": "Temp_patch.assign(1).TARGET_FX_ITEM",
+   "desc": "TARGET_FX_ITEM",
+   "encoding": "INTEGER1x7",
+   "bytes": 1,
+   "min": 0,
+   "max": 19,
+   "init": 0,
+   "ofs": 0,
+   "factor": 1
+  },
+  {
+   "addr": "10 00 02 0A",
+   "path": "Temp_patch.assign(1).TARGET_MAX",
+   "desc": "TARGET MAX",
+   "encoding": "INTEGER4x4",
+   "bytes": 4,
+   "min": -32768,
+   "max": 32767,
+   "init": 1,
+   "ofs": 32768,
+   "factor": 1
+  },
+  {
+   "addr": "10 00 02 06",
+   "path": "Temp_patch.assign(1).TARGET_MIN",
+   "desc": "TARGET MIN",
+   "encoding": "INTEGER4x4",
+   "bytes": 4,
+   "min": -32768,
+   "max": 32767,
+   "init": 0,
+   "ofs": 32768,
+   "factor": 1
+  },
+  {
+   "addr": "10 00 00 10",
+   "path": "Temp_patch.common.Level",
+   "desc": "Level",
+   "encoding": "INTEGER2x4",
+   "bytes": 2,
+   "min": 0,
+   "max": 200,
+   "init": 100,
+   "ofs": 0,
+   "factor": 1
+  },
+  {
+   "addr": "10 00 00 00",
+   "path": "Temp_patch.common.Name",
+   "desc": "Patch Name",
+   "encoding": "BYTES",
+   "bytes": 16,
+   "min": 32,
+   "max": 126,
+   "init": "INIT MEMORY     ",
+   "ofs": 0,
+   "factor": 1
+  },
+  {
+   "addr": "10 00 0F 0D",
+   "path": "Temp_patch.efct.ChainNextItem0",
+   "desc": "CHAIN NEXT ITEM0",
+   "encoding": "INTEGER1x7",
+   "bytes": 1,
+   "min": -1,
+   "max": 48,
+   "init": -1,
+   "ofs": 1,
+   "factor": 1
+  },
+  {
+   "addr": "10 00 0F 0E",
+   "path": "Temp_patch.efct.ChainNextItem1",
+   "desc": "CHAIN NEXT ITEM1",
+   "encoding": "INTEGER1x7",
+   "bytes": 1,
+   "min": -1,
+   "max": 48,
+   "init": 0,
+   "ofs": 1,
+   "factor": 1
+  },
+  {
+   "addr": "10 00 0F 0C",
+   "path": "Temp_patch.efct.ChainTopItem",
+   "desc": "CHAIN TOP ITEM",
+   "encoding": "INTEGER1x7",
+   "bytes": 1,
+   "min": -1,
+   "max": 48,
+   "init": 1,
+   "ofs": 1,
+   "factor": 1
+  },
+  {
+   "addr": "10 00 11 01",
+   "path": "Temp_patch.fxItem(1).Switch",
+   "desc": "Switch",
+   "encoding": "INTEGER1x7",
+   "bytes": 1,
+   "min": 0,
+   "max": 1,
+   "init": 0,
+   "ofs": 0,
+   "factor": 1
+  },
+  {
+   "addr": "10 00 11 00",
+   "path": "Temp_patch.fxItem(1).Type",
+   "desc": "Type",
+   "encoding": "INTEGER1x7",
+   "bytes": 1,
+   "min": 0,
+   "max": 2,
+   "init": 0,
+   "ofs": 0,
+   "factor": 1
+  },
+  {
+   "addr": "10 00 11 03",
+   "path": "Temp_patch.fxItem(1).param(0)",
+   "desc": "param",
+   "encoding": "INTEGER4x4",
+   "bytes": 4,
+   "min": -20000,
+   "max": 20000,
+   "init": 0,
+   "ofs": 32768,
+   "factor": 1
+  },
+  {
+   "addr": "10 00 13 01",
+   "path": "Temp_patch.fxItem(2).Switch",
+   "desc": "Switch",
+   "encoding": "INTEGER1x7",
+   "bytes": 1,
+   "min": 0,
+   "max": 1,
+   "init": 0,
+   "ofs": 0,
+   "factor": 1
+  },
+  {
+   "addr": "10 00 13 00",
+   "path": "Temp_patch.fxItem(2).Type",
+   "desc": "Type",
+   "encoding": "INTEGER1x7",
+   "bytes": 1,
+   "min": 0,
+   "max": 2,
+   "init": 0,
+   "ofs": 0,
+   "factor": 1
+  }
+ ],
+ "paramValues": [
+  {
+   "path": "Temp_patch.fxItem(1).Switch",
+   "first": 0,
+   "labels": [
+    "OFF",
+    "ON"
+   ]
+  }
+ ],
+ "effects": [
+  {
+   "typeId": 0,
+   "name": "FX ALPHA",
+   "parameters": [
+    {
+     "name": "OFF/ON",
+     "uniqueName": "off-on",
+     "field": "Switch",
+     "offsetInFxItem": "00 00 00 01",
+     "encoding": "INTEGER1x7",
+     "bytes": 1,
+     "min": 0,
+     "max": 1,
+     "init": 1,
+     "ofs": 0,
+     "values": [
+      "OFF",
+      "ON"
+     ],
+     "template": "OFF, ON"
+    },
+    {
+     "name": "MODE",
+     "uniqueName": "mode",
+     "paramIndex": 0,
+     "offsetInFxItem": "00 00 00 03",
+     "encoding": "INTEGER4x4",
+     "bytes": 4,
+     "min": 0,
+     "max": 2,
+     "init": 1,
+     "ofs": 32768,
+     "values": [
+      "SOFT",
+      "MID",
+      "HARD"
+     ],
+     "template": "SOFT, MID, HARD"
+    },
+    {
+     "name": "AMOUNT",
+     "uniqueName": "amount",
+     "paramIndex": 1,
+     "offsetInFxItem": "00 00 00 07",
+     "encoding": "INTEGER4x4",
+     "bytes": 4,
+     "min": 0,
+     "max": 120,
+     "init": 50,
+     "ofs": 32768,
+     "template": "0-120"
+    },
+    {
+     "name": "TONE",
+     "uniqueName": "tone",
+     "paramIndex": 2,
+     "offsetInFxItem": "00 00 00 0B",
+     "encoding": "INTEGER4x4",
+     "bytes": 4,
+     "min": -50,
+     "max": 50,
+     "init": 0,
+     "ofs": 32768,
+     "format": "(value > 0 ? '+' : '') + value",
+     "template": "-50 - +50"
+    }
+   ]
+  },
+  {
+   "typeId": 1,
+   "name": "FX BETA",
+   "parameters": [
+    {
+     "name": "RATE",
+     "uniqueName": "rate",
+     "paramIndex": 0,
+     "offsetInFxItem": "00 00 00 03",
+     "encoding": "INTEGER4x4",
+     "bytes": 4,
+     "min": 400,
+     "max": 2500,
+     "init": 1200,
+     "ofs": 32768,
+     "factor": 10,
+     "template": "40 - 250"
+    }
+   ]
+  },
+  {
+   "typeId": 2,
+   "name": "FX EMPTY",
+   "parameters": null
+  }
+ ],
+ "master": {
+  "typeId": 99,
+  "name": "MASTER",
+  "parameters": [
+   {
+    "name": "LEVEL",
+    "uniqueName": "memory-level",
+    "paramIndex": 0,
+    "offsetInFxItem": "00 00 00 03",
+    "encoding": "INTEGER4x4",
+    "bytes": 4,
+    "min": 0,
+    "max": 200,
+    "init": 100,
+    "ofs": 0,
+    "template": "0 - 200"
+   }
+  ]
+ },
+ "assign": {
+  "categories": [
+   {
+    "name": "ALPHA",
+    "hasSwitch": true,
+    "blockName": "FX ALPHA"
+   },
+   {
+    "name": "BETA",
+    "hasSwitch": false,
+    "blockName": "FX BETA"
+   },
+   {
+    "name": "MASTER",
+    "hasSwitch": false,
+    "blockName": "MASTER"
+   },
+   {
+    "name": "TUNER",
+    "hasSwitch": false,
+    "blockName": "TUNER"
+   },
+   {
+    "name": "MIDI",
+    "hasSwitch": false,
+    "blockName": "MIDI"
+   },
+   {
+    "name": "----",
+    "hasSwitch": false,
+    "blockName": "----"
+   }
+  ],
+  "targets": [
+   {
+    "name": "----",
+    "category": 5,
+    "effect": false,
+    "uniqueName": ""
+   },
+   {
+    "name": "ON/OFF",
+    "category": -1,
+    "effect": true,
+    "uniqueName": "off-on"
+   },
+   {
+    "name": "MODE",
+    "category": 0,
+    "effect": true,
+    "uniqueName": "mode"
+   },
+   {
+    "name": "TONE",
+    "category": 0,
+    "effect": true,
+    "uniqueName": "tone"
+   },
+   {
+    "name": "RATE",
+    "category": 1,
+    "effect": true,
+    "uniqueName": "rate"
+   },
+   {
+    "name": "LEVEL",
+    "category": 2,
+    "effect": false,
+    "uniqueName": "memory-level"
+   },
+   {
+    "name": "ON/OFF",
+    "category": 3,
+    "effect": false,
+    "uniqueName": "off-on"
+   },
+   {
+    "name": "MIDI CC#",
+    "category": 4,
+    "effect": false,
+    "uniqueName": "midi-cc#"
+   },
+   {
+    "name": "MIDI PC#",
+    "category": 4,
+    "effect": false,
+    "uniqueName": "midi-pc#"
+   },
+   {
+    "name": "AMOUNT",
+    "category": 0,
+    "effect": true,
+    "uniqueName": "amount"
+   }
+  ]
+ }
+}

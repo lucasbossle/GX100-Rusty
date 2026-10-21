@@ -137,10 +137,10 @@ pub struct EditorApp {
 }
 
 impl EditorApp {
-    pub fn new(cc: &eframe::CreationContext<'_>, sim: bool) -> Self {
+    pub fn new(egui_ctx: &egui::Context, sim: bool) -> Self {
         let (cmd_tx, cmd_rx) = mpsc::channel();
         let (ev_tx, ev_rx) = mpsc::channel();
-        let ctx = cc.egui_ctx.clone();
+        let ctx = egui_ctx.clone();
         let wake = cmd_tx.clone();
         let worker = std::thread::Builder::new()
             .name("gx100-worker".into())
@@ -324,7 +324,7 @@ impl EditorApp {
 
     fn top_bar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.heading("GX-100 Editor");
+            ui.heading("GX100-Rusty");
             ui.separator();
             ui.selectable_value(&mut self.view, View::Patch, "Patch").on_hover_text("The patch active on the pedal");
             ui.selectable_value(&mut self.view, View::CtlExp, "CTL/EXP");

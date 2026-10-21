@@ -1,2 +1,0 @@
-{ "name": "GX-100", "btsVersion": "0.0.0", "btsBuild": "0", "modelId": "000000000B", "deviceId": "10",
-  "lengthOfAddr": 4, "lengthOfSize": 4, "communicationLevel": 3, "familyCode": "0B04", "rq1TimeoutSec": 15, "extension": "tsl" }

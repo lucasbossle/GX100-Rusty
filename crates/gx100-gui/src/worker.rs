@@ -579,8 +579,21 @@ mod tests {
     use super::*;
     use std::cell::RefCell;
 
+    /// These tests walk the real system areas and patch layout, which the synthetic fixture lacks:
+    /// run them with `GX100_TABLES=extracted/tables.json`.
+    fn real_tables() -> bool {
+        let real = *tables::SOURCE == tables::TablesSource::Extracted;
+        if !real {
+            eprintln!("skipped: needs the real tables (GX100_TABLES=…/tables.json)");
+        }
+        real
+    }
+
     #[test]
     fn backup_job_reads_everything_then_finishes() {
+        if !real_tables() {
+            return;
+        }
         let transport: Box<dyn Transport> = Box::new(demo_sim());
         let mut d = Device::new(transport).without_pacing().with_timeout(Duration::from_millis(50));
         let events = RefCell::new(0usize);
@@ -599,6 +612,9 @@ mod tests {
 
     #[test]
     fn ui_writes_only_reach_the_live_patch_and_system() {
+        if !real_tables() {
+            return;
+        }
         let temp = patch::temp_patch();
         assert!(writable(temp, 16), "patch name");
         let level = tables::param("System_common.WarningDelete").unwrap();
@@ -617,6 +633,9 @@ mod tests {
 
     #[test]
     fn setlist_job_writes_and_verifies() {
+        if !real_tables() {
+            return;
+        }
         let transport: Box<dyn Transport> = Box::new(demo_sim());
         let mut d = Device::new(transport).without_pacing().with_timeout(Duration::from_millis(50));
         let a = d.read_patch(patch::user_patch(3).unwrap()).unwrap();

@@ -391,7 +391,7 @@ mod tests {
 
     #[test]
     fn chain_layout_finds_the_branch() {
-        if tables::SOURCE != tables::TablesSource::Extracted {
+        if *tables::SOURCE != tables::TablesSource::Extracted {
             return; // needs the real FX type list and all 20 ChainNextItems
         }
         let id = |n: &str| tables::fx_type_by_name(n).unwrap().id;

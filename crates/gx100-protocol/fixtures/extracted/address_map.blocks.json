@@ -1,6 +1,0 @@
-{ "root": [
-  { "addr": "00 00 00 00", "name": "System_common", "block": "SystemCommon", "size": "00 00 00 10" },
-  { "addr": "10 00 00 00", "name": "Temp_patch", "block": "Patch", "size": "00 00 38 33" },
-  { "addr": "20 00 00 00", "name": "User_patch(1)", "block": "Patch", "size": "00 00 38 33" },
-  { "addr": "20 06 00 00", "name": "User_patch(2)", "block": "Patch", "size": "00 00 38 33" } ],
-  "blocks": {} }

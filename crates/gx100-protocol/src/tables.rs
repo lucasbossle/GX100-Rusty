@@ -1,6 +1,6 @@
-//! Parameter tables generated from the official editor's own data
-//! (see `tools/extract`). Falls back to a tiny synthetic fixture when
-//! no extracted tables are present.
+//! Parameter tables read from the official editor's own data (see `tools/extract`), loaded at run
+//! time: the extractor's JSON is [`install`]ed at startup. Without it, lookups fall back to
+//! `$GX100_TABLES` or to a tiny synthetic fixture.
 
 use crate::address::Address;
 use crate::value::{Encoding, ValueSpec};
@@ -236,15 +236,117 @@ impl FxDoc {
     }
 }
 
-mod generated {
-    use super::*;
-    include!(concat!(env!("OUT_DIR"), "/tables.rs"));
+mod load;
+
+pub use load::from_json;
+
+/// Every table, as loaded from the extractor's output (see [`install`]).
+#[derive(Debug)]
+pub struct Tables {
+    pub source: TablesSource,
+    pub product: ProductDef,
+    /// Special command addresses (sorted by name).
+    pub commands: &'static [NamedAddress],
+    /// Fixed addresses the editor uses directly (sorted by name).
+    pub addresses: &'static [NamedAddress],
+    /// Top-level memory areas, in address order.
+    pub root: &'static [RootDef],
+    /// Every System / PC-map / Setup / Temp-patch parameter, sorted by path.
+    pub params: &'static [ParamDef],
+    /// Value labels of list parameters (sorted by path).
+    pub param_values: &'static [ParamValues],
+    /// FX types, indexed by the value of `fxItem(n).Type`.
+    pub fx_types: &'static [FxTypeDef],
+    /// The patch's MASTER settings (level, BPM, key…) as assign targets see them. Offsets are meaningless.
+    pub master: FxTypeDef,
+    /// Assign target categories, indexed by [`AssignTargetDef::category`].
+    pub assign_categories: &'static [AssignCategoryDef],
+    /// Assign targets, indexed by the value of `assign(n).TARGET`.
+    pub assign_targets: &'static [AssignTargetDef],
+    /// The parameter guide's text about each FX type and its parameters (empty without it).
+    pub fx_docs: &'static [FxDoc],
+    /// The guide's text about patch and system settings, by generalized path (sorted).
+    pub param_docs: &'static [ParamDoc],
 }
 
-pub use generated::{
-    ADDRESSES, ASSIGN_CATEGORIES, ASSIGN_TARGETS, COMMANDS, FX_DOCS, FX_TYPES, MASTER, PARAMS, PARAM_DOCS,
-    PARAM_VALUES, PRODUCT, ROOT, SOURCE,
-};
+/// The synthetic tables in `fixtures/` (made-up effects and text), for tests and as a last resort.
+pub fn fixture() -> Tables {
+    from_json(include_str!("../fixtures/tables.json"), Some(include_str!("../fixtures/docs.json")))
+        .expect("fixture tables")
+}
+
+static TABLES: std::sync::OnceLock<&'static Tables> = std::sync::OnceLock::new();
+
+/// Makes `t` the tables every lookup uses. Call it once, before anything reads a table; afterwards
+/// (or when a lookup already fell back to the defaults) it returns `t` back.
+pub fn install(t: Tables) -> Result<(), Box<Tables>> {
+    let mut t = Some(Box::new(t));
+    TABLES.get_or_init(|| Box::leak(t.take().expect("first")));
+    t.map_or(Ok(()), Err)
+}
+
+/// Whether tables have been installed (or a lookup already fell back to the defaults).
+pub fn installed() -> bool {
+    TABLES.get().is_some()
+}
+
+/// The tables in use. Without [`install`]: the file named by `$GX100_TABLES` (a `tables.json`, with
+/// an optional `docs.json` beside it), else the synthetic fixture.
+pub fn get() -> &'static Tables {
+    TABLES.get_or_init(|| Box::leak(Box::new(default_tables())))
+}
+
+fn default_tables() -> Tables {
+    let Some(path) = std::env::var_os("GX100_TABLES") else { return fixture() };
+    load_file(std::path::Path::new(&path)).unwrap_or_else(|e| panic!("GX100_TABLES: {e}"))
+}
+
+/// Loads a `tables.json` written by the extractor, plus `docs.json` from the same folder if present.
+pub fn load_file(path: &std::path::Path) -> Result<Tables, String> {
+    let bundle = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let docs = path.parent().map(|d| d.join("docs.json")).and_then(|d| std::fs::read_to_string(d).ok());
+    from_json(&bundle, docs.as_deref())
+}
+
+/// A view into the installed tables that reads like the table itself (`PARAMS.iter()`, `MASTER.param(…)`).
+pub struct Table<T: ?Sized + 'static>(fn(&'static Tables) -> &'static T);
+
+impl<T: ?Sized + 'static> Clone for Table<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T: ?Sized + 'static> Copy for Table<T> {}
+
+impl<T: 'static> IntoIterator for Table<[T]> {
+    type Item = &'static T;
+    type IntoIter = std::slice::Iter<'static, T>;
+    fn into_iter(self) -> Self::IntoIter {
+        (self.0)(get()).iter()
+    }
+}
+
+impl<T: ?Sized + 'static> std::ops::Deref for Table<T> {
+    type Target = T;
+    fn deref(&self) -> &'static T {
+        (self.0)(get())
+    }
+}
+
+pub static SOURCE: Table<TablesSource> = Table(|t| &t.source);
+pub static PRODUCT: Table<ProductDef> = Table(|t| &t.product);
+pub static COMMANDS: Table<[NamedAddress]> = Table(|t| t.commands);
+pub static ADDRESSES: Table<[NamedAddress]> = Table(|t| t.addresses);
+pub static ROOT: Table<[RootDef]> = Table(|t| t.root);
+pub static PARAMS: Table<[ParamDef]> = Table(|t| t.params);
+pub static PARAM_VALUES: Table<[ParamValues]> = Table(|t| t.param_values);
+pub static FX_TYPES: Table<[FxTypeDef]> = Table(|t| t.fx_types);
+pub static MASTER: Table<FxTypeDef> = Table(|t| &t.master);
+pub static ASSIGN_CATEGORIES: Table<[AssignCategoryDef]> = Table(|t| t.assign_categories);
+pub static ASSIGN_TARGETS: Table<[AssignTargetDef]> = Table(|t| t.assign_targets);
+pub static FX_DOCS: Table<[FxDoc]> = Table(|t| t.fx_docs);
+pub static PARAM_DOCS: Table<[ParamDoc]> = Table(|t| t.param_docs);
 
 /// Looks up a parameter by its full path (e.g. `Temp_patch.common.Name`).
 pub fn param(path: &str) -> Option<&'static ParamDef> {
@@ -273,12 +375,12 @@ fn named(list: &'static [NamedAddress], name: &str) -> Option<Address> {
 
 /// A special command address (e.g. `PATCH_WRITE`).
 pub fn command(name: &str) -> Option<Address> {
-    named(COMMANDS, name)
+    named(&COMMANDS, name)
 }
 
 /// A fixed address the editor uses directly (e.g. `CHAIN`).
 pub fn address(name: &str) -> Option<Address> {
-    named(ADDRESSES, name)
+    named(&ADDRESSES, name)
 }
 
 pub fn root(name: &str) -> Option<&'static RootDef> {
@@ -386,7 +488,7 @@ mod tests {
 
     #[test]
     fn fixture_specific() {
-        if SOURCE != TablesSource::Fixture {
+        if *SOURCE != TablesSource::Fixture {
             return;
         }
         let alpha = fx_type_by_name("fx alpha").unwrap();

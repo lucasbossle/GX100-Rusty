@@ -79,7 +79,7 @@ mod tests {
         assert_eq!(areas[0].name, "System_common");
         assert_eq!(areas[0].data.len(), common.size as usize);
         assert_eq!(&areas[0].data[..3], &[7, 8, 9]);
-        if tables::SOURCE == tables::TablesSource::Extracted {
+        if *tables::SOURCE == tables::TablesSource::Extracted {
             assert_eq!(areas.len(), SYSTEM_AREAS.len());
         }
     }

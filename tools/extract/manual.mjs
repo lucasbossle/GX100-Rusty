@@ -2,7 +2,7 @@
 // Fetches the GX-100 parameter guide (Roland's online manual) and turns it into descriptions for the
 // editor: what each effect does (and what it models), each parameter, each list option, and the
 // patch/system settings. The text is Roland's: it goes to ./extracted (gitignored) like the tables,
-// and must not be published. Run after extract.mjs; it regenerates extracted/tables.rs.
+// and must not be published. Run after extract.mjs; the editor reads extracted/docs.json next to tables.json.
 //
 // usage: node tools/extract/manual.mjs [--refresh] [--dump]
 //   --refresh  download the pages again (they're cached in extracted/manual/)
@@ -10,8 +10,6 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 import { SETTINGS } from './manual_map.mjs';
 
 const BASE = 'https://static.roland.com/manuals/gx-100_parameter_v200/en-US/';
@@ -267,7 +265,6 @@ async function main() {
   fs.writeFileSync(path.join(outDir, 'docs.json'), JSON.stringify(docs, null, 2) + '\n');
   const nParams = fxDocs.reduce((a, f) => a + f.params.length, 0);
   console.log(`wrote docs.json: ${fxDocs.length} effects (${nParams} parameters), ${paramDocs.size} settings`);
-  execFileSync(process.execPath, [fileURLToPath(new URL('./gen_rust.mjs', import.meta.url)), outDir], { stdio: 'inherit' });
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });

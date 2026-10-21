@@ -1,0 +1,31 @@
+{
+ "fx": [
+  {
+   "fx": "FX ALPHA",
+   "text": "A test effect.",
+   "params": [
+    {
+     "key": "mode",
+     "text": "Picks how hard it works.",
+     "options": [
+      [
+       "SOFT",
+       "Gently."
+      ],
+      [
+       "HARD",
+       "Firmly."
+      ]
+     ]
+    }
+   ]
+  }
+ ],
+ "params": [
+  {
+   "key": "Temp_patch.assign(n).SOURCE",
+   "text": "What moves the target.",
+   "options": []
+  }
+ ]
+}

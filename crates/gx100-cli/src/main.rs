@@ -45,6 +45,8 @@ Options:
   --port <name>    MIDI port to use (substring; default: \"GX-100\")
   --sim            use an in-memory simulated pedal instead of MIDI
   --allow-system   let `set` write outside the live patch (system settings)
+  --bts <path>     BOSS TONE STUDIO for GX-100.app to read the parameter tables from
+                   (default: found in /Applications; read once, then cached)
 
 Writes only touch the live patch: nothing is saved to a memory slot, so
 switching patches on the pedal discards them.";
@@ -55,17 +57,19 @@ struct Opts {
     port: Option<String>,
     sim: bool,
     allow_system: bool,
+    bts: Option<std::path::PathBuf>,
     args: Vec<String>,
 }
 
 fn parse_args() -> Res<Opts> {
-    let mut o = Opts { port: None, sim: false, allow_system: false, args: Vec::new() };
+    let mut o = Opts { port: None, sim: false, allow_system: false, bts: None, args: Vec::new() };
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
         match a.as_str() {
             "--port" => o.port = Some(it.next().ok_or("--port needs a value")?),
             "--sim" => o.sim = true,
             "--allow-system" => o.allow_system = true,
+            "--bts" => o.bts = Some(it.next().ok_or("--bts needs a path")?.into()),
             "-h" | "--help" | "help" => {
                 println!("{USAGE}");
                 std::process::exit(0);
@@ -74,6 +78,22 @@ fn parse_args() -> Res<Opts> {
         }
     }
     Ok(o)
+}
+
+/// Reads the parameter tables from BOSS TONE STUDIO (or the cache) before anything looks at them.
+fn load_tables(o: &Opts) {
+    match gx100_extract::prepare(o.bts.as_deref()) {
+        Ok((t, origin)) => {
+            if let gx100_extract::Origin::Extracted(app) = &origin {
+                eprintln!("read the parameter tables from {} (cached for next time)", app.display());
+            }
+            let _ = tables::install(t);
+        }
+        Err(e) => eprintln!("warning: {e}. Using the synthetic test tables: real pedals won't make sense."),
+    }
+    if *tables::SOURCE == TablesSource::Fixture && std::env::var_os("GX100_TABLES").is_none() {
+        eprintln!("(install BOSS TONE STUDIO for GX-100, or point --bts at it)");
+    }
 }
 
 fn main() {
@@ -85,9 +105,7 @@ fn main() {
 
 fn run() -> Res {
     let o = parse_args()?;
-    if tables::SOURCE == TablesSource::Fixture {
-        eprintln!("warning: built with the synthetic test tables; run `node tools/extract/extract.mjs` and rebuild.");
-    }
+    load_tables(&o);
     let Some(cmd) = o.args.first() else {
         println!("{USAGE}");
         return Ok(());

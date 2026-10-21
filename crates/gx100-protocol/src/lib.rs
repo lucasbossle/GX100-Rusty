@@ -3,7 +3,8 @@
 //! - [`address`]: 4-byte 7-bit addresses
 //! - [`sysex`]: building/parsing messages, reassembling split SysEx
 //! - [`value`]: how values are packed into data bytes
-//! - [`tables`]: every parameter, command and FX type (generated)
+//! - [`tables`]: every parameter, command and FX type (loaded from the extractor's JSON)
+//! - [`json`]: the small JSON reader they need
 //! - [`session`]: a [`session::Device`] on top of any [`session::Transport`]
 //! - [`patch`]: patch and FX-slot helpers
 //! - [`assign`]: the 20 assigns of a patch: targets, and the messages an edit sends
@@ -14,6 +15,7 @@
 pub mod address;
 pub mod assign;
 pub mod backup;
+pub mod json;
 pub mod librarian;
 pub mod patch;
 pub mod session;
