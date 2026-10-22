@@ -1,21 +1,21 @@
-//! `gx100` — a small command-line tool for the BOSS GX-100.
+//! `opengx100` — a small command-line tool for the BOSS GX-100.
 
 #[cfg(feature = "midi")]
-use gx100_midi as midi;
+use opengx100_midi as midi;
 
-use gx100_protocol::assign;
-use gx100_protocol::patch::{self, FX_SLOTS};
-use gx100_protocol::session::{Device, ParamValue, Transport};
-use gx100_protocol::sim::SimulatedGx100;
-use gx100_protocol::tables::{self, FxField, TablesSource};
-use gx100_protocol::Address;
+use opengx100_protocol::assign;
+use opengx100_protocol::patch::{self, FX_SLOTS};
+use opengx100_protocol::session::{Device, ParamValue, Transport};
+use opengx100_protocol::sim::SimulatedGx100;
+use opengx100_protocol::tables::{self, FxField, TablesSource};
+use opengx100_protocol::Address;
 use std::error::Error;
 use std::time::Duration;
 
 const USAGE: &str = "\
-gx100 — command-line tool for the BOSS GX-100
+opengx100 — command-line tool for the BOSS GX-100
 
-USAGE: gx100 [--port <name>] [--sim] [--allow-system] <command> [args]
+USAGE: opengx100 [--port <name>] [--sim] [--allow-system] <command> [args]
 
 Offline:
   find <text>                  search parameters by path or description
@@ -82,16 +82,16 @@ fn parse_args() -> Res<Opts> {
 
 /// Reads the parameter tables from BOSS TONE STUDIO (or the cache) before anything looks at them.
 fn load_tables(o: &Opts) {
-    match gx100_extract::prepare(o.bts.as_deref()) {
+    match opengx100_extract::prepare(o.bts.as_deref()) {
         Ok((t, origin)) => {
-            if let gx100_extract::Origin::Extracted(app) = &origin {
+            if let opengx100_extract::Origin::Extracted(app) = &origin {
                 eprintln!("read the parameter tables from {} (cached for next time)", app.display());
             }
             let _ = tables::install(t);
         }
         Err(e) => eprintln!("warning: {e}. Using the synthetic test tables: real pedals won't make sense."),
     }
-    if *tables::SOURCE == TablesSource::Fixture && std::env::var_os("GX100_TABLES").is_none() {
+    if *tables::SOURCE == TablesSource::Fixture && std::env::var_os("OPENGX100_TABLES").is_none() {
         eprintln!("(install BOSS TONE STUDIO for GX-100, or point --bts at it)");
     }
 }

@@ -1,15 +1,15 @@
 //! The live patch's 20 assigns (CTL/EXP → Assigns): each lets a controller move one parameter
 //! between a minimum and a maximum. Edits go to the pedal as the official editor sends them
-//! (see [`gx100_protocol::assign`]); they're part of the patch, kept with WRITE.
+//! (see [`opengx100_protocol::assign`]); they're part of the patch, kept with WRITE.
 
 use super::editing::{doc_label, fx_options, option_note, param_widget, value_widget};
 use super::{EditorApp, AMBER};
 use crate::worker::{Cmd, PatchId};
 use eframe::egui::{self, RichText};
-use gx100_protocol::assign::{self, Applies, Message, Target, ASSIGNS};
-use gx100_protocol::patch::{self, PatchData};
-use gx100_protocol::session::ParamValue;
-use gx100_protocol::tables;
+use opengx100_protocol::assign::{self, Applies, Message, Target, ASSIGNS};
+use opengx100_protocol::patch::{self, PatchData};
+use opengx100_protocol::session::ParamValue;
+use opengx100_protocol::tables;
 
 /// The patch's input sensitivity, used when an assign's SOURCE is INPUT.
 const INPUT_SENS: &str = "Temp_patch.efct.MasterInputSens";

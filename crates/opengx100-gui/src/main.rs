@@ -1,4 +1,4 @@
-//! GX100-Rusty — a graphical editor for the BOSS GX-100.
+//! OpenGX100 Editor — a graphical editor for the BOSS GX-100.
 //!
 //! Run with `--sim` to use an in-memory simulated pedal instead of USB MIDI.
 
@@ -39,13 +39,13 @@ fn main() -> eframe::Result {
     let sim = std::env::args().any(|a| a == "--sim");
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("GX100-Rusty")
+            .with_title("OpenGX100 Editor")
             .with_inner_size([1100.0, 720.0])
             .with_min_inner_size([700.0, 400.0]),
         ..Default::default()
     };
     eframe::run_native(
-        "GX100-Rusty",
+        "OpenGX100 Editor",
         options,
         Box::new(move |cc| Ok(Box::new(Root::Setup { setup: setup::Setup::start(&cc.egui_ctx, None), sim }))),
     )

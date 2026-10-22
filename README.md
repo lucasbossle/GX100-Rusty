@@ -1,4 +1,4 @@
-# GX100-Rusty
+# OpenGX100 Editor
 
 An independent, open-source editor for the **BOSS GX-100** guitar effects processor, written in Rust. It talks to the
 pedal over USB MIDI, edits patches live, and adds things the official editor doesn't have: setlists that reorder
@@ -25,7 +25,7 @@ doing.
 - **Backups**: full backup of the system settings and all 200 patches; reads BOSS TONE STUDIO `.alb` backups too.
 - **Descriptions** (optional, for now only when building from source): parameter, option and effect explanations
   from Roland's online parameter guide, downloaded on your machine.
-- **Command-line tool** (`gx100`) and an in-memory **simulated pedal** for trying everything without hardware.
+- **Command-line tool** (`opengx100`) and an in-memory **simulated pedal** for trying everything without hardware.
 
 ![Assign editor](docs/images/assigns.png)
 
@@ -36,31 +36,31 @@ should work in principle (the MIDI layer is `midir`, the GUI `egui`), but the co
 the Mac app, and nobody has tried them yet: contributions welcome.
 
 Reading is safe. Writes follow exactly what the official editor sends, and every kind of write has been verified on a
-real pedal with writes that change nothing (`gx100 write-check`). Still, **make a backup first** (Backups tab).
+real pedal with writes that change nothing (`opengx100 write-check`). Still, **make a backup first** (Backups tab).
 
 ## Install (macOS)
 
 1. Install **BOSS TONE STUDIO for GX-100** (free, from [boss.info](https://www.boss.info/), on the GX-100's support
-   page). GX100-Rusty reads the pedal's parameter tables from it; you don't need to run it.
-2. Download `GX100-Rusty-<version>-macos.zip` from the [latest release](https://github.com/lucasbossle/GX100-Rusty/releases/latest),
-   unzip it and move **GX100-Rusty.app** to Applications. It runs on Apple Silicon and Intel Macs, macOS 11 or newer.
+   page). OpenGX100 Editor reads the pedal's parameter tables from it; you don't need to run it.
+2. Download `OpenGX100-Editor-<version>-macos.zip` from the [latest release](https://github.com/lucasbossle/OpenGX100-Editor/releases/latest),
+   unzip it and move **OpenGX100 Editor.app** to Applications. It runs on Apple Silicon and Intel Macs, macOS 11 or newer.
 3. The app isn't signed with an Apple Developer ID, so the first time macOS refuses to open it. Open it once, then go to
    **System Settings → Privacy & Security** and click **Open Anyway** (or run
-   `xattr -dr com.apple.quarantine /Applications/GX100-Rusty.app` in Terminal).
+   `xattr -dr com.apple.quarantine "/Applications/OpenGX100 Editor.app"` in Terminal).
 4. On first launch it reads the tables from BOSS TONE STUDIO (a second or two) and keeps them; after a BOSS TONE STUDIO
-   update it reads them again. Quit BOSS TONE STUDIO while using GX100-Rusty: only one editor can talk to the pedal.
+   update it reads them again. Quit BOSS TONE STUDIO while using OpenGX100 Editor: only one editor can talk to the pedal.
 
-No pedal at hand? Start it with `open -a GX100-Rusty --args --sim` to try everything on a simulated pedal.
+No pedal at hand? Start it with `open -a "OpenGX100 Editor" --args --sim` to try everything on a simulated pedal.
 
 ## Build from source
 
 Needs [Rust](https://rustup.rs) 1.95 or newer and BOSS TONE STUDIO for GX-100 installed.
 
 ```sh
-git clone https://github.com/lucasbossle/GX100-Rusty.git
-cd GX100-Rusty
-cargo run --release -p gx100-gui                # the editor (add `-- --sim` for the simulated pedal)
-./tools/macos/bundle.sh                         # build dist/GX100-Rusty.app (universal) and its zip
+git clone https://github.com/lucasbossle/OpenGX100-Editor.git
+cd OpenGX100-Editor
+cargo run --release -p opengx100-gui                # the editor (add `-- --sim` for the simulated pedal)
+./tools/macos/bundle.sh                         # build dist/OpenGX100 Editor.app (universal) and its zip
 ```
 
 Optional, for the descriptions (needs [Node.js](https://nodejs.org) 18+): download Roland's online parameter guide on
@@ -69,13 +69,13 @@ your machine and put the result next to the cached tables:
 ```sh
 node tools/extract/extract.mjs                  # tables → extracted/ (also what manual.mjs reads)
 node tools/extract/manual.mjs                   # parameter guide → extracted/docs.json
-cp extracted/docs.json ~/Library/Application\ Support/gx100-editor/tables/
+cp extracted/docs.json ~/Library/Application\ Support/OpenGX100\ Editor/tables/
 ```
 
 ## Command-line tool
 
 ```
-cargo run -p gx100-cli -- <command>            # add --sim to use the simulated pedal
+cargo run -p opengx100-cli -- <command>            # add --sim to use the simulated pedal
 
   ports | identify | hello                     find and greet the pedal (read-only)
   patch [<n>]                                  dump a stored patch (or the live one): chain, parameters, assigns
@@ -95,8 +95,8 @@ Quit the GUI before using the CLI on the pedal: both switch the pedal's editor m
 BOSS TONE STUDIO is a web app (HTML/JavaScript) in a native shell. Its parameter tables (address map, FX types, value
 labels, assign targets) only exist as JavaScript that has to run. `tools/extract/core.js` runs those configuration
 scripts once and collects the tables as JSON: inside the app with an embedded JavaScript engine
-([boa](https://boajs.dev), crate `gx100-extract`), or under Node with `tools/extract/extract.mjs` for development. Both
-give identical output. The result is cached in `~/Library/Application Support/gx100-editor/tables/` and loaded at
+([boa](https://boajs.dev), crate `opengx100-extract`), or under Node with `tools/extract/extract.mjs` for development. Both
+give identical output. The result is cached in `~/Library/Application Support/OpenGX100 Editor/tables/` and loaded at
 startup; the editor itself is plain Rust.
 
 Behaviour (which messages to send, in which order) was learned by reading that app's code and confirmed on the pedal;
@@ -104,17 +104,17 @@ the code in this repository is our own.
 
 | Path | What |
 |---|---|
-| `crates/gx100-protocol` | Dependency-free library: SysEx DT1/RQ1, addresses, value encodings, the tables (loaded from JSON), `Device` session, patches, assigns, librarian, backups, simulated pedal |
-| `crates/gx100-extract` | Reads the tables from BOSS TONE STUDIO (embedded JavaScript engine) and caches them |
-| `crates/gx100-midi` | MIDI transport (`midir`) |
-| `crates/gx100-cli` | `gx100` command-line tool |
-| `crates/gx100-gui` | `gx100-rusty`, the desktop editor (`eframe`/`egui`) |
+| `crates/opengx100-protocol` | Dependency-free library: SysEx DT1/RQ1, addresses, value encodings, the tables (loaded from JSON), `Device` session, patches, assigns, librarian, backups, simulated pedal |
+| `crates/opengx100-extract` | Reads the tables from BOSS TONE STUDIO (embedded JavaScript engine) and caches them |
+| `crates/opengx100-midi` | MIDI transport (`midir`) |
+| `crates/opengx100-cli` | `opengx100` command-line tool |
+| `crates/opengx100-gui` | `opengx100-editor`, the desktop editor (`eframe`/`egui`) |
 | `tools/extract` | `core.js` (the extraction, shared), Node wrapper, parameter-guide fetcher |
 | `tools/macos/bundle.sh` | Builds the universal `.app` and the release zip |
-| `crates/gx100-protocol/fixtures` | Synthetic tables for tests and CI |
+| `crates/opengx100-protocol/fixtures` | Synthetic tables for tests and CI |
 | `CLAUDE.md` | Detailed development notes: protocol facts, verification status, open items |
 
-Settings and data live in `~/Library/Application Support/gx100-editor/` (setlists, backups) on macOS, or the
+Settings and data live in `~/Library/Application Support/OpenGX100 Editor/` (setlists, backups) on macOS, or the
 platform's equivalent data directory.
 
 ## Protocol notes

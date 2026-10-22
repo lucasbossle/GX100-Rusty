@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/gx100-protocol", "crates/gx100-extract", "crates/gx100-midi", "crates/gx100-cli", "crates/gx100-gui"]
+members = ["crates/opengx100-protocol", "crates/opengx100-extract", "crates/opengx100-midi", "crates/opengx100-cli", "crates/opengx100-gui"]
 
 [workspace.package]
 edition = "2021"

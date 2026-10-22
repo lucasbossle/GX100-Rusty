@@ -12,12 +12,12 @@
 //! setlist (a background job that reads every patch back to verify it).
 
 use crate::store::{self, Area, Backup};
-use gx100_protocol::backup::{system_areas, AreaData};
-use gx100_protocol::patch::{self, PatchData, USER_PATCHES};
-use gx100_protocol::session::{Device, Notification, ParamValue, Transport};
-use gx100_protocol::sim::SimulatedGx100;
-use gx100_protocol::tables;
-use gx100_protocol::Address;
+use opengx100_protocol::backup::{system_areas, AreaData};
+use opengx100_protocol::patch::{self, PatchData, USER_PATCHES};
+use opengx100_protocol::session::{Device, Notification, ParamValue, Transport};
+use opengx100_protocol::sim::SimulatedGx100;
+use opengx100_protocol::tables;
+use opengx100_protocol::Address;
 use std::collections::VecDeque;
 use std::sync::mpsc::{Receiver, Sender, TryRecvError};
 use std::time::Duration;
@@ -31,7 +31,7 @@ pub enum PatchId {
 }
 
 impl PatchId {
-    fn addr(self) -> Option<gx100_protocol::Address> {
+    fn addr(self) -> Option<opengx100_protocol::Address> {
         match self {
             PatchId::Temp => Some(patch::temp_patch()),
             PatchId::User(n) => patch::user_patch(n),
@@ -427,7 +427,7 @@ fn connect(sim: bool, wake: Sender<Cmd>) -> Result<(Dev, String), String> {
     let (transport, desc): (Box<dyn Transport>, String) = if sim {
         (Box::new(demo_sim()), "simulated GX-100".into())
     } else {
-        let t = gx100_midi::open_with_waker(None, move || {
+        let t = opengx100_midi::open_with_waker(None, move || {
             let _ = wake.send(Cmd::MidiArrived);
         })?;
         let desc = format!("GX-100 on {}", t.in_name);
@@ -580,11 +580,11 @@ mod tests {
     use std::cell::RefCell;
 
     /// These tests walk the real system areas and patch layout, which the synthetic fixture lacks:
-    /// run them with `GX100_TABLES=extracted/tables.json`.
+    /// run them with `OPENGX100_TABLES=extracted/tables.json`.
     fn real_tables() -> bool {
         let real = *tables::SOURCE == tables::TablesSource::Extracted;
         if !real {
-            eprintln!("skipped: needs the real tables (GX100_TABLES=…/tables.json)");
+            eprintln!("skipped: needs the real tables (OPENGX100_TABLES=…/tables.json)");
         }
         real
     }
@@ -624,8 +624,8 @@ mod tests {
         assert!(!writable(temp.offset(patch::patch_span() - 1), 4), "runs past the live patch");
         // What the assign editor sends: a field, then the whole block.
         let mut d = patch::PatchData::from_bytes(vec![0; patch::patch_span() as usize]);
-        for n in 1..=gx100_protocol::assign::ASSIGNS {
-            for (offset, data) in gx100_protocol::assign::set_field(&mut d, n, "SW", 1).unwrap_or_default() {
+        for n in 1..=opengx100_protocol::assign::ASSIGNS {
+            for (offset, data) in opengx100_protocol::assign::set_field(&mut d, n, "SW", 1).unwrap_or_default() {
                 assert!(writable(temp.offset(offset), data.len()), "assign {n}");
             }
         }

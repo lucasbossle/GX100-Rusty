@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Extracts the GX-100 parameter tables from an installed copy of "BOSS TONE STUDIO for GX-100" into
 // ./extracted (gitignored: derived from Roland's files, never publish it). The editor does the same by
-// itself at first launch (gx100-extract crate); this Node version is for development: it also writes the
+// itself at first launch (opengx100-extract crate); this Node version is for development: it also writes the
 // intermediate JSON files, for inspection and for manual.mjs.
 //
 // usage: node tools/extract/extract.mjs [path/to/BOSS TONE STUDIO for GX-100.app] [outDir]

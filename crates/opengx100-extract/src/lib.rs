@@ -5,7 +5,7 @@
 //! STUDIO changes version.
 
 use boa_engine::{js_string, Context, JsNativeError, JsObject, JsResult, JsString, JsValue, NativeFunction, Source};
-use gx100_protocol::tables::{self, Tables};
+use opengx100_protocol::tables::{self, Tables};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -163,11 +163,23 @@ pub fn extract(app: &Path) -> Result<String, Error> {
     Ok(json.to_std_string_escaped())
 }
 
-/// Where extracted tables are kept: `<data dir>/gx100-editor/tables/` (on macOS
-/// `~/Library/Application Support/gx100-editor/tables/`). A `docs.json` (parameter guide text, from
+/// The editor's data folder: `<data dir>/OpenGX100 Editor` (on macOS `~/Library/Application Support/OpenGX100 Editor`).
+/// Data from before the project was renamed (`gx100-editor`) is moved there the first time.
+pub fn data_dir() -> Option<PathBuf> {
+    let base = dirs::data_dir()?;
+    let dir = base.join("OpenGX100 Editor");
+    let old = base.join("gx100-editor");
+    if !dir.exists() && old.is_dir() {
+        let _ = std::fs::rename(&old, &dir);
+    }
+    Some(dir)
+}
+
+/// Where extracted tables are kept: `<data dir>/tables/` (on macOS
+/// `~/Library/Application Support/OpenGX100 Editor/tables/`). A `docs.json` (parameter guide text, from
 /// `tools/extract/manual.mjs`) placed there is loaded too.
 pub fn cache_dir() -> Option<PathBuf> {
-    dirs::data_dir().map(|d| d.join("gx100-editor").join("tables"))
+    data_dir().map(|d| d.join("tables"))
 }
 
 fn cache_file() -> Option<PathBuf> {
@@ -177,7 +189,7 @@ fn cache_file() -> Option<PathBuf> {
 /// Where the tables came from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Origin {
-    /// `$GX100_TABLES`.
+    /// `$OPENGX100_TABLES`.
     Env(PathBuf),
     /// The cache, still matching the installed BOSS TONE STUDIO (or it's no longer installed).
     Cache(PathBuf),
@@ -185,10 +197,10 @@ pub enum Origin {
     Extracted(PathBuf),
 }
 
-/// The tables to use: `$GX100_TABLES` if set; else the cache, if it matches the installed BOSS TONE
+/// The tables to use: `$OPENGX100_TABLES` if set; else the cache, if it matches the installed BOSS TONE
 /// STUDIO (`app`, or [`find_app`]); else extracted from it now and cached. Doesn't install them.
 pub fn prepare(app: Option<&Path>) -> Result<(Tables, Origin), Error> {
-    if let Some(p) = std::env::var_os("GX100_TABLES").map(PathBuf::from) {
+    if let Some(p) = std::env::var_os("OPENGX100_TABLES").map(PathBuf::from) {
         return tables::load_file(&p).map(|t| (t, Origin::Env(p))).map_err(Error::Tables);
     }
     let app = app.map(Path::to_path_buf).or_else(find_app);
@@ -255,7 +267,7 @@ mod tests {
         assert!(t.params.len() > 2000 && t.fx_types.len() > 50);
         let node = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../extracted/tables.json");
         if let Ok(n) = std::fs::read_to_string(node) {
-            let parse = |s: &str| gx100_protocol::json::Json::parse(s).unwrap();
+            let parse = |s: &str| opengx100_protocol::json::Json::parse(s).unwrap();
             assert!(parse(&json) == parse(&n), "boa and Node disagree");
             eprintln!("identical to the Node tool's output");
         }

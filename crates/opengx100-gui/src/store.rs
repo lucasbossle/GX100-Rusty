@@ -1,5 +1,5 @@
 //! Setlists and backups on disk: JSON files under the app's data folder
-//! (macOS: `~/Library/Application Support/gx100-editor`). Patch data is stored as hex.
+//! (macOS: `~/Library/Application Support/OpenGX100 Editor`). Patch data is stored as hex.
 //!
 //! Backups made by BOSS TONE STUDIO (`.alb` files from its "backup all") are read too: same data
 //! (system areas + 200 patches), stored per block as arrays of hex strings.
@@ -7,18 +7,21 @@
 //! Every write goes to a temporary file first and is then renamed over the old one,
 //! so a crash mid-save never leaves a half-written setlist or backup.
 
-use gx100_protocol::backup::SYSTEM_AREAS;
-use gx100_protocol::patch::{patch_blocks, patch_span, PatchData};
-use gx100_protocol::tables;
-use gx100_protocol::Address;
+use opengx100_protocol::backup::SYSTEM_AREAS;
+use opengx100_protocol::patch::{patch_blocks, patch_span, PatchData};
+use opengx100_protocol::tables;
+use opengx100_protocol::Address;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-const SETLIST_FORMAT: &str = "gx100-editor setlist";
-const BACKUP_FORMAT: &str = "gx100-editor backup";
+const SETLIST_FORMAT: &str = "OpenGX100 Editor setlist";
+const BACKUP_FORMAT: &str = "OpenGX100 Editor backup";
+/// What files written before the project was renamed say; still read.
+const OLD_SETLIST_FORMAT: &str = "gx100-editor setlist";
+const OLD_BACKUP_FORMAT: &str = "gx100-editor backup";
 
 /// Seconds since the Unix epoch.
 pub fn now() -> i64 {
@@ -249,8 +252,7 @@ pub struct Store {
 impl Store {
     /// The per-user data folder (created if needed).
     pub fn open_default() -> io::Result<Store> {
-        let base = dirs::data_dir().ok_or_else(|| io::Error::other("no data folder on this system"))?;
-        Store::at(base.join("gx100-editor"))
+        Store::at(opengx100_extract::data_dir().ok_or_else(|| io::Error::other("no data folder on this system"))?)
     }
 
     pub fn at(root: PathBuf) -> io::Result<Store> {
@@ -297,7 +299,7 @@ impl Store {
 
     fn read_setlist(path: &Path) -> io::Result<Setlist> {
         let f: SetlistFile = serde_json::from_slice(&fs::read(path)?).map_err(invalid)?;
-        if f.format != SETLIST_FORMAT {
+        if f.format != SETLIST_FORMAT && f.format != OLD_SETLIST_FORMAT {
             return Err(invalid("not a setlist file"));
         }
         let entries = f
@@ -431,7 +433,7 @@ impl Store {
             return backup_from_alb(serde_json::from_slice(&raw).map_err(invalid)?, created);
         }
         let f: BackupFile = serde_json::from_slice(&raw).map_err(invalid)?;
-        if f.format != BACKUP_FORMAT {
+        if f.format != BACKUP_FORMAT && f.format != OLD_BACKUP_FORMAT {
             return Err(invalid("not a backup file"));
         }
         let system = f
@@ -596,12 +598,12 @@ mod tests {
     }
 
     /// Compares a real BOSS TONE STUDIO backup with one of ours taken from the same pedal:
-    /// `GX100_ALB=… GX100_OURS=… cargo test -p gx100-gui -- --ignored same_pedal`
+    /// `OPENGX100_ALB=… OPENGX100_OURS=… cargo test -p opengx100-gui -- --ignored same_pedal`
     #[test]
     #[ignore]
     fn same_pedal_boss_and_ours_match() {
-        let (Ok(alb), Ok(ours)) = (std::env::var("GX100_ALB"), std::env::var("GX100_OURS")) else {
-            panic!("set GX100_ALB and GX100_OURS");
+        let (Ok(alb), Ok(ours)) = (std::env::var("OPENGX100_ALB"), std::env::var("OPENGX100_OURS")) else {
+            panic!("set OPENGX100_ALB and OPENGX100_OURS");
         };
         let dir = tempfile::tempdir().unwrap();
         let store = Store::at(dir.path().to_path_buf()).unwrap();

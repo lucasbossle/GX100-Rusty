@@ -1755,52 +1755,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gx100-cli"
-version = "0.1.0"
-dependencies = [
- "gx100-extract",
- "gx100-midi",
- "gx100-protocol",
-]
-
-[[package]]
-name = "gx100-extract"
-version = "0.1.0"
-dependencies = [
- "boa_engine",
- "dirs",
- "gx100-protocol",
-]
-
-[[package]]
-name = "gx100-gui"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "dirs",
- "eframe",
- "gx100-extract",
- "gx100-midi",
- "gx100-protocol",
- "rfd",
- "serde",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
-name = "gx100-midi"
-version = "0.1.0"
-dependencies = [
- "gx100-protocol",
- "midir",
-]
-
-[[package]]
-name = "gx100-protocol"
-version = "0.1.0"
-
-[[package]]
 name = "half"
 version = "2.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2845,6 +2799,52 @@ name = "oneshot"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cfe21416a02c693fb9f980befcb230ecc70b0b3d1cc4abf88b9675c4c1457f0c"
+
+[[package]]
+name = "opengx100-cli"
+version = "0.1.0"
+dependencies = [
+ "opengx100-extract",
+ "opengx100-midi",
+ "opengx100-protocol",
+]
+
+[[package]]
+name = "opengx100-extract"
+version = "0.1.0"
+dependencies = [
+ "boa_engine",
+ "dirs",
+ "opengx100-protocol",
+]
+
+[[package]]
+name = "opengx100-gui"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "dirs",
+ "eframe",
+ "opengx100-extract",
+ "opengx100-midi",
+ "opengx100-protocol",
+ "rfd",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "opengx100-midi"
+version = "0.1.0"
+dependencies = [
+ "midir",
+ "opengx100-protocol",
+]
+
+[[package]]
+name = "opengx100-protocol"
+version = "0.1.0"
 
 [[package]]
 name = "option-ext"

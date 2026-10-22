@@ -9,9 +9,9 @@
 use super::{Conn, CtlExpPage, EditorApp, AMBER, RED};
 use crate::worker::{Cmd, PatchId};
 use eframe::egui::{self, RichText};
-use gx100_protocol::patch::{self, PatchData, USER_PATCHES};
-use gx100_protocol::session::ParamValue;
-use gx100_protocol::tables::{self, FxParamDef, ParamDef, ParamDoc};
+use opengx100_protocol::patch::{self, PatchData, USER_PATCHES};
+use opengx100_protocol::session::ParamValue;
+use opengx100_protocol::tables::{self, FxParamDef, ParamDef, ParamDoc};
 
 /// A dialog that needs an answer before something is written.
 pub(super) enum Dialog {
@@ -299,7 +299,7 @@ impl EditorApp {
     }
 
     /// The bytes of `len` system-setting bytes at `addr`, from the copy read at connect.
-    fn system_bytes(&self, addr: gx100_protocol::Address, len: u32) -> Option<&[u8]> {
+    fn system_bytes(&self, addr: opengx100_protocol::Address, len: u32) -> Option<&[u8]> {
         self.system.iter().find_map(|a| {
             let off = addr.since(a.addr)? as usize;
             a.data.get(off..off + len as usize)
@@ -312,7 +312,7 @@ impl EditorApp {
     }
 
     /// Applies system bytes the pedal sent (or we wrote) to our copy.
-    pub(super) fn apply_system(&mut self, addr: gx100_protocol::Address, data: &[u8]) {
+    pub(super) fn apply_system(&mut self, addr: opengx100_protocol::Address, data: &[u8]) {
         for a in &mut self.system {
             let Some(off) = addr.since(a.addr).map(|o| o as usize) else { continue };
             if off < a.data.len() {
@@ -746,7 +746,7 @@ impl EditorApp {
     pub(super) fn setlist_write_plan(&self) -> Option<Vec<(u16, PatchData)>> {
         let s = self.active_setlist()?;
         let sources: Vec<u16> = s.entries.iter().map(|e| e.source).collect();
-        let moves = gx100_protocol::librarian::plan_moves(&sources, s.target_start).ok()?;
+        let moves = opengx100_protocol::librarian::plan_moves(&sources, s.target_start).ok()?;
         let mut plan = Vec::new();
         for (m, e) in moves.iter().zip(&s.entries) {
             let data = e.data.as_ref()?;

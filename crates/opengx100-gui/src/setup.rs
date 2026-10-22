@@ -2,8 +2,8 @@
 //! read once (a second or two) and cached; until then this screen stands in for the editor.
 
 use eframe::egui::{self, RichText};
-use gx100_extract::{Error, Origin};
-use gx100_protocol::tables::{self, Tables};
+use opengx100_extract::{Error, Origin};
+use opengx100_protocol::tables::{self, Tables};
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver};
 
@@ -21,7 +21,7 @@ impl Setup {
         let (tx, rx) = mpsc::channel();
         let ctx = ctx.clone();
         std::thread::spawn(move || {
-            let _ = tx.send(gx100_extract::prepare(app.as_deref()));
+            let _ = tx.send(opengx100_extract::prepare(app.as_deref()));
             ctx.request_repaint();
         });
         Setup { pending: Some(rx), problem: None }
@@ -51,7 +51,7 @@ impl Setup {
         egui::CentralPanel::default().show(ui, |ui| {
             ui.vertical_centered(|ui| {
                 ui.add_space(80.0);
-                ui.heading("GX100-Rusty");
+                ui.heading("OpenGX100 Editor");
                 ui.add_space(16.0);
                 match &self.problem {
                     None => {
@@ -64,7 +64,7 @@ impl Setup {
                             ui.label(RichText::new("BOSS TONE STUDIO for GX-100 is needed").strong());
                             ui.add_space(6.0);
                             ui.label(
-                                "GX100-Rusty reads the pedal's parameter tables (names, ranges, effect lists) from \
+                                "OpenGX100 Editor reads the pedal's parameter tables (names, ranges, effect lists) from \
                                  Roland's free official editor, installed on this Mac. It doesn't change it or send \
                                  anything anywhere.",
                             );

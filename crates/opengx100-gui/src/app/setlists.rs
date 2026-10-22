@@ -10,8 +10,8 @@ use super::{Conn, EditorApp, AMBER, GREEN, RED, SCROLL_NOT_DRAG};
 use crate::store::{fmt_time, now, Entry, Setlist, Store};
 use crate::worker::{Cmd, PatchId};
 use eframe::egui::{self, vec2, RichText, Sense, Stroke};
-use gx100_protocol::librarian::{self, Move};
-use gx100_protocol::patch::{self, PatchData, USER_PATCHES};
+use opengx100_protocol::librarian::{self, Move};
+use opengx100_protocol::patch::{self, PatchData, USER_PATCHES};
 use std::time::{Duration, Instant};
 
 /// How long after the last change a setlist is saved.
@@ -504,7 +504,7 @@ impl EditorApp {
             });
             return;
         }
-        let device_id = gx100_protocol::sysex::DEFAULT_DEVICE_ID;
+        let device_id = opengx100_protocol::sysex::DEFAULT_DEVICE_ID;
         // Skip patches already in place, unless the pedal's version differs from the saved copy.
         let plans: Vec<(Move, &Entry, Vec<librarian::Dt1>)> = moves
             .iter()

@@ -1,12 +1,12 @@
 //! MIDI I/O through `midir` (CoreMIDI on macOS, WinMM on Windows, ALSA on Linux).
 
-use gx100_protocol::session::Transport;
-use gx100_protocol::sysex::SysexAssembler;
 use midir::{Ignore, MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
+use opengx100_protocol::session::Transport;
+use opengx100_protocol::sysex::SysexAssembler;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::time::Duration;
 
-const CLIENT: &str = "gx100";
+const CLIENT: &str = "opengx100";
 
 pub struct MidiTransport {
     _input: MidiInputConnection<()>,

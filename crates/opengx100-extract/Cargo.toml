@@ -1,5 +1,5 @@
 [package]
-name = "gx100-extract"
+name = "opengx100-extract"
 version = "0.1.0"
 description = "Reads the GX-100 parameter tables from an installed BOSS TONE STUDIO (embedded JavaScript engine)"
 edition.workspace = true
@@ -9,4 +9,4 @@ license.workspace = true
 [dependencies]
 boa_engine = "0.22.0"
 dirs = "7.0.0"
-gx100-protocol = { path = "../gx100-protocol" }
+opengx100-protocol = { path = "../opengx100-protocol" }

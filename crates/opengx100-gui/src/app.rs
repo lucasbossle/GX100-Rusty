@@ -10,9 +10,9 @@ use crate::store::{Backup, BackupInfo, Setlist, Store};
 use crate::worker::{self, Cmd, Event, PatchId};
 use editing::Dialog;
 use eframe::egui::{self, pos2, vec2, Color32, Pos2, Rect, RichText, Sense, Stroke};
-use gx100_protocol::backup::AreaData;
-use gx100_protocol::patch::{self, ChainLayout, PatchData, FX_SLOTS, USER_PATCHES};
-use gx100_protocol::tables::{self, FxField, FxParamDef, FxTypeDef};
+use opengx100_protocol::backup::AreaData;
+use opengx100_protocol::patch::{self, ChainLayout, PatchData, FX_SLOTS, USER_PATCHES};
+use opengx100_protocol::tables::{self, FxField, FxParamDef, FxTypeDef};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -324,7 +324,7 @@ impl EditorApp {
 
     fn top_bar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.heading("GX100-Rusty");
+            ui.heading("OpenGX100 Editor");
             ui.separator();
             ui.selectable_value(&mut self.view, View::Patch, "Patch").on_hover_text("The patch active on the pedal");
             ui.selectable_value(&mut self.view, View::CtlExp, "CTL/EXP");

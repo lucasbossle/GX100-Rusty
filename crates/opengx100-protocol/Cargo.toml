@@ -1,5 +1,5 @@
 [package]
-name = "gx100-protocol"
+name = "opengx100-protocol"
 version = "0.1.0"
 description = "SysEx protocol for the BOSS GX-100: addresses, encodings, parameter tables, request/response session"
 edition.workspace = true

@@ -1,0 +1,21 @@
+[package]
+name = "opengx100-cli"
+version = "0.1.0"
+description = "Command-line tool for the BOSS GX-100"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "opengx100"
+path = "src/main.rs"
+
+[features]
+default = ["midi"]
+# Real MIDI I/O via opengx100-midi (midir). Without it only offline commands and --sim work.
+midi = ["dep:opengx100-midi"]
+
+[dependencies]
+opengx100-protocol = { path = "../opengx100-protocol" }
+opengx100-extract = { path = "../opengx100-extract" }
+opengx100-midi = { path = "../opengx100-midi", optional = true }

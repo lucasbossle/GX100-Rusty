@@ -1,6 +1,6 @@
 //! Parameter tables read from the official editor's own data (see `tools/extract`), loaded at run
 //! time: the extractor's JSON is [`install`]ed at startup. Without it, lookups fall back to
-//! `$GX100_TABLES` or to a tiny synthetic fixture.
+//! `$OPENGX100_TABLES` or to a tiny synthetic fixture.
 
 use crate::address::Address;
 use crate::value::{Encoding, ValueSpec};
@@ -290,15 +290,15 @@ pub fn installed() -> bool {
     TABLES.get().is_some()
 }
 
-/// The tables in use. Without [`install`]: the file named by `$GX100_TABLES` (a `tables.json`, with
+/// The tables in use. Without [`install`]: the file named by `$OPENGX100_TABLES` (a `tables.json`, with
 /// an optional `docs.json` beside it), else the synthetic fixture.
 pub fn get() -> &'static Tables {
     TABLES.get_or_init(|| Box::leak(Box::new(default_tables())))
 }
 
 fn default_tables() -> Tables {
-    let Some(path) = std::env::var_os("GX100_TABLES") else { return fixture() };
-    load_file(std::path::Path::new(&path)).unwrap_or_else(|e| panic!("GX100_TABLES: {e}"))
+    let Some(path) = std::env::var_os("OPENGX100_TABLES") else { return fixture() };
+    load_file(std::path::Path::new(&path)).unwrap_or_else(|e| panic!("OPENGX100_TABLES: {e}"))
 }
 
 /// Loads a `tables.json` written by the extractor, plus `docs.json` from the same folder if present.

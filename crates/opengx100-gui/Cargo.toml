@@ -1,5 +1,5 @@
 [package]
-name = "gx100-gui"
+name = "opengx100-gui"
 version = "0.1.0"
 description = "Graphical editor for the BOSS GX-100"
 edition.workspace = true
@@ -7,13 +7,13 @@ rust-version.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "gx100-rusty"
+name = "opengx100-editor"
 path = "src/main.rs"
 
 [dependencies]
-gx100-protocol = { path = "../gx100-protocol" }
-gx100-extract = { path = "../gx100-extract" }
-gx100-midi = { path = "../gx100-midi" }
+opengx100-protocol = { path = "../opengx100-protocol" }
+opengx100-extract = { path = "../opengx100-extract" }
+opengx100-midi = { path = "../opengx100-midi" }
 eframe = "0.37"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"

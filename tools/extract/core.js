@@ -1,7 +1,7 @@
 // Reads the GX-100 parameter tables out of an installed "BOSS TONE STUDIO for GX-100".
 //
 // A plain script (no imports), shared by two hosts: tools/extract/extract.mjs (Node, for development)
-// and the gx100-extract crate (embedded JavaScript engine, at the editor's first launch). It only defines
+// and the opengx100-extract crate (embedded JavaScript engine, at the editor's first launch). It only defines
 // `extractTables(host)`; the host provides:
 //   host.read(rel)       text of a file under Contents/Resources/html/ (e.g. 'js/config/address_map.js')
 //   host.run(src, name)  run one of the official editor's scripts in a sandbox (shared global scope)
@@ -194,7 +194,7 @@ function extractTables(host) {
   };
 }
 
-// What the editor loads (crates/gx100-protocol/src/tables/load.rs): the parts of extractTables' result
+// What the editor loads (crates/opengx100-protocol/src/tables/load.rs): the parts of extractTables' result
 // it needs, in one object.
 function tablesBundle(t) {
   return {

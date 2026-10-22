@@ -2,24 +2,24 @@
 
 ## Goal
 Rebuild BOSS TONE STUDIO (BTS) for GX-100 as a Rust app, then extend it with features the official
-editor lacks. Published as **GX100-Rusty** (public, https://github.com/lucasbossle/GX100-Rusty, branch `master`, MIT OR
+editor lacks. Published as **OpenGX100 Editor** (public, https://github.com/lucasbossle/OpenGX100-Editor, branch `master`, MIT OR
 Apache-2.0, macOS release zips on GitHub). The only JS that ever runs is BTS's own configuration scripts, once, to
 read the tables (owner approved the embedded engine on 2026-10-20). The owner is investigating/learning: prefer small, verifiable steps, explain findings, and verify on the
 real pedal (read-only first, then no-op writes) before calling something done.
 
 ## Next session: start here
 State on 2026-10-20 (third session): repo public, v0.1.0 released for macOS. 55 protocol + 1 extract (+1 ignored) + 10 GUI
-tests pass on both table sets (`cargo test` = fixture; `GX100_TABLES=$PWD/extracted/tables.json cargo test
+tests pass on both table sets (`cargo test` = fixture; `OPENGX100_TABLES=$PWD/extracted/tables.json cargo test
 --workspace` = real), clippy clean. Ask the owner before committing/pushing.
 
 Done in the third session:
 - **Tables at run time** (so the release contains nothing of Roland's): `tools/extract/core.js` (engine-neutral
-  extraction, shared) → JSON bundle → `tables::from_json` → `tables::install`. `gx100-extract` runs core.js in boa at
-  first launch (1.3 s release / ~8 s debug), caches `~/Library/Application Support/gx100-editor/tables/tables.json`
+  extraction, shared) → JSON bundle → `tables::from_json` → `tables::install`. `opengx100-extract` runs core.js in boa at
+  first launch (1.3 s release / ~8 s debug), caches `~/Library/Application Support/OpenGX100 Editor/tables/tables.json`
   (+ optional `docs.json` beside it), re-extracts when BTS's version/build changes. Verified identical to the Node
   output (ignored test `matches_the_node_tool`) and to the old generated tables (one-off field-by-field comparison).
   GUI shows a first-launch screen (`setup.rs`: spinner / "BOSS TONE STUDIO is needed" + Locate…). CLI: `--bts`.
-- **Release**: `tools/macos/bundle.sh` → universal `dist/GX100-Rusty.app` (ad-hoc signed, macOS 11+) + zip. Binary
+- **Release**: `tools/macos/bundle.sh` → universal `dist/OpenGX100 Editor.app` (ad-hoc signed, macOS 11+) + zip. Binary
   checked: no guide text, no table strings beyond the parameter paths our code names.
 - Assign writes verified on the pedal; live "now" column on the Assigns page; README/CONTRIBUTING for open source.
 
@@ -56,13 +56,13 @@ BTS (`/Applications/BOSS/GX-100/BOSS TONE STUDIO for GX-100.app`) is a macOS WKW
   "System_control%29" = block + decimal offset) with label lists (`resource-id` → `js/config/resource.js`).
   `bg709-pc.elf` is another model (differs e.g. in AutoOff range).
 `tools/extract/core.js` runs those files (`extractTables(host)` + `tablesBundle`); hosts: `extract.mjs` (Node `vm`
-sandbox, writes `extracted/*.json` incl. `tables.json`) and `gx100-extract` (boa). Node was installed with Homebrew on
+sandbox, writes `extracted/*.json` incl. `tables.json`) and `opengx100-extract` (boa). Node was installed with Homebrew on
 2026-10-19 (owner approved); it's only needed for development tools now.
 
 ## Layout
-- `crates/gx100-protocol` — **dependency-free** lib:
+- `crates/opengx100-protocol` — **dependency-free** lib:
   - `address`, `sysex` (incl. `SysexAssembler`), `value` (encodings), `json` (small reader), `tables` (runtime:
-    `from_json`/`load_file`/`install`/`get`; without install: `$GX100_TABLES` else the fixture. `PARAMS` etc. are
+    `from_json`/`load_file`/`install`/`get`; without install: `$OPENGX100_TABLES` else the fixture. `PARAMS` etc. are
     `Table<T>` deref views (`PARAMS.iter()`, `*SOURCE`); `PARAMS`, `FX_TYPES`, `ROOT`, `COMMANDS`, `ADDRESSES`, `PARAM_VALUES` + `ParamDef::display/labels`,
     `MASTER` (patch master settings as an FX-like type, for assign ranges), `ASSIGN_CATEGORIES/TARGETS`,
     `FX_DOCS`/`PARAM_DOCS` + `fx_doc`, `param_doc`)
@@ -79,10 +79,10 @@ sandbox, writes `extracted/*.json` incl. `tables.json`) and `gx100-extract` (boa
   - `backup` — `SYSTEM_AREAS` (24, BTS's `SystemSetting`), `Device::read_system_areas`
   - `sim` — in-memory pedal: answers RQ1/identity/IS_RQ1_ACCEPT, handles PATCH_WRITE, CurrentPatchNum (loads the
     patch into Temp), SETTING_WRITE_CMD; `push_unsolicited` fakes pedal-initiated DT1s
-- `crates/gx100-midi` — midir transport (`open`, `open_with_waker`, `port_names`), shared by CLI and GUI
-- `crates/gx100-cli` — `gx100` binary (MIDI behind default feature `midi`): `ports identify hello get set slots patch
+- `crates/opengx100-midi` — midir transport (`open`, `open_with_waker`, `port_names`), shared by CLI and GUI
+- `crates/opengx100-cli` — `opengx100` binary (MIDI behind default feature `midi`): `ports identify hello get set slots patch
   monitor write-check fx-get fx-set find fx-types commands`
-- `crates/gx100-gui` — `gx100-editor` binary, eframe/egui **0.37** (new API: `App::ui` + `App::logic`,
+- `crates/opengx100-gui` — `opengx100-editor` binary, eframe/egui **0.37** (new API: `App::ui` + `App::logic`,
   `egui::Panel::top/left`, `Id::unique`, `ScrollArea::scroll_source`). Deps allowed here: serde, serde_json, dirs,
   chrono, rfd.
   - `worker.rs` — owns the `Device` on its own thread (opens MIDI there; midir handles needn't be `Send`). UI sends
@@ -99,8 +99,8 @@ sandbox, writes `extracted/*.json` incl. `tables.json`) and `gx100-extract` (boa
     save input setting, confirm setlist write).
   - `app/assigns.rs` — CTL/EXP → Assigns page.
   - `app/setlists.rs` — Setlists tab; `app/backups.rs` — Backups tab; `store.rs` — persistence.
-- `crates/gx100-protocol/fixtures/{tables,docs}.json` — SYNTHETIC tables (made-up FX), embedded as the fallback
-- `crates/gx100-extract` — boa + dirs: `find_app`, `app_version`, `extract` (core.js in boa), `prepare` (env → cache
+- `crates/opengx100-protocol/fixtures/{tables,docs}.json` — SYNTHETIC tables (made-up FX), embedded as the fallback
+- `crates/opengx100-extract` — boa + dirs: `find_app`, `app_version`, `extract` (core.js in boa), `prepare` (env → cache
   → extract), `cache_dir`. Used by CLI and GUI.
 - `tools/macos/bundle.sh` — universal .app + zip in `dist/` (gitignored)
 
@@ -131,15 +131,15 @@ sandbox, writes `extracted/*.json` incl. `tables.json`) and `gx100-extract` (boa
 - **Backups**: "Back up now" (system areas + 200 patches, ~4 min, background, cancel; also fills the patch cache),
   list (ours `.json` and BTS `.alb`), open to browse (names that differ from the pedal in amber), Show in Finder,
   delete (confirm). **Restore is disabled** (it would write).
-- Storage: `~/Library/Application Support/gx100-editor/{setlists/<id>.json, backups/backup-YYYYMMDD-HHMMSS.json}`,
+- Storage: `~/Library/Application Support/OpenGX100 Editor/{setlists/<id>.json, backups/backup-YYYYMMDD-HHMMSS.json}`,
   hex patch data, atomic writes (tmp + rename), unreadable files reported but not fatal.
 
 ## Verification status (2026-10-20, second session)
-- Tests: 55 protocol (fixture by default; real with `GX100_TABLES=$PWD/extracted/tables.json`), 10 GUI (3 skip on
+- Tests: 55 protocol (fixture by default; real with `OPENGX100_TABLES=$PWD/extracted/tables.json`), 10 GUI (3 skip on
   the fixture)
   (store round-trips incl. `.alb`, export/import, worker events, backup job, setlist job, write guard).
   Ignored test `same_pedal_boss_and_ours_match` compares a real `.alb` with our backup:
-  `GX100_ALB=… GX100_OURS=… cargo test -p gx100-gui -- --ignored same_pedal`.
+  `OPENGX100_ALB=… OPENGX100_OURS=… cargo test -p opengx100-gui -- --ignored same_pedal`.
 - Real pedal: identify, hello, get, patch, monitor, backups (byte-identical to BTS's `.alb` of the same pedal).
   Writes verified as no-ops with read-back (`write-check`): setlist write (user-patch DT1s), system param write.
   Select patch and PATCH_WRITE verified on the pedal (2026-10-20, `write-check` on patch 118). Assign writes
@@ -193,16 +193,16 @@ sandbox, writes `extracted/*.json` incl. `tables.json`) and `gx100-extract` (boa
 ```sh
 node tools/extract/extract.mjs        # tables via Node → extracted/ (tables.json + intermediate JSON)
 node tools/extract/manual.mjs         # fetch the parameter guide → extracted/docs.json (--refresh, --dump);
-                                      # copy it to ~/Library/Application Support/gx100-editor/tables/ for the app
-cargo test                            # fixture; GX100_TABLES=$PWD/extracted/tables.json cargo test --workspace = real
-cargo test --release -p gx100-extract -- --ignored   # boa extraction == Node output
-./tools/macos/bundle.sh               # release build: dist/GX100-Rusty.app + zip
+                                      # copy it to ~/Library/Application Support/OpenGX100 Editor/tables/ for the app
+cargo test                            # fixture; OPENGX100_TABLES=$PWD/extracted/tables.json cargo test --workspace = real
+cargo test --release -p opengx100-extract -- --ignored   # boa extraction == Node output
+./tools/macos/bundle.sh               # release build: dist/OpenGX100 Editor.app + zip
 cargo clippy --workspace --all-targets
-cargo run -p gx100-gui                # the editor (binary gx100-rusty) (add `-- --sim` for the simulator)
-cargo run -p gx100-cli -- hello       # real pedal, read-only
-cargo run -p gx100-cli -- patch 132   # dump a stored patch incl. its assigns (no number: the live patch)
-cargo run -p gx100-cli -- monitor 30  # print what the pedal pushes (editor mode on, then off)
-cargo run -p gx100-cli -- write-check # no-op write verification (refuses if the live patch has unsaved edits)
+cargo run -p opengx100-gui                # the editor (binary opengx100-editor) (add `-- --sim` for the simulator)
+cargo run -p opengx100-cli -- hello       # real pedal, read-only
+cargo run -p opengx100-cli -- patch 132   # dump a stored patch incl. its assigns (no number: the live patch)
+cargo run -p opengx100-cli -- monitor 30  # print what the pedal pushes (editor mode on, then off)
+cargo run -p opengx100-cli -- write-check # no-op write verification (refuses if the live patch has unsaved edits)
 ```
 Quit the GUI (⌘Q) before using the CLI on the pedal: two programs toggling editor mode interfere, and killing the GUI
 skips its exit hook (the pedal then stays in editor mode until the next connect).
