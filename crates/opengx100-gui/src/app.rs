@@ -52,6 +52,10 @@ const BLOCK_H: f32 = 46.0;
 const GAP: f32 = 30.0;
 const ROW_GAP: f32 = 16.0;
 const TERMINAL_W: f32 = 34.0;
+/// Space between the lines of a folded chain.
+const LINE_GAP: f32 = 30.0;
+/// Room beside the lines for the wire that turns down to the next one.
+const TURN: f32 = 20.0;
 
 /// Scrolling by scroll bar and wheel, but not by dragging content (dragging moves rows instead).
 const SCROLL_NOT_DRAG: egui::scroll_area::ScrollSource = egui::scroll_area::ScrollSource {
@@ -539,10 +543,12 @@ impl EditorApp {
         if self.selected_slot.is_none() {
             self.selected_slot = chain.iter().copied().find(|&s| !is_routing(&data, s));
         }
+        // Folds to the width there is; scrolls only if one piece (a wide parallel section) doesn't fit.
+        let width = ui.available_width();
         egui::ScrollArea::horizontal()
             .id_salt("chain")
             .scroll_source(SCROLL_NOT_DRAG)
-            .show(ui, |ui| self.chain_diagram(ui, &data, &layout));
+            .show(ui, |ui| self.chain_diagram(ui, &data, &layout, width));
         if self.show_unused {
             let unused: Vec<u8> = (1..=FX_SLOTS).filter(|s| !chain.contains(s)).collect();
             if !unused.is_empty() {
@@ -568,7 +574,10 @@ impl EditorApp {
     /// DIVIDER and meet again at the MIXER; the SPLITTER (only a marker) isn't drawn.
     /// The path the signal takes is drawn bright; a branch the DIVIDER doesn't feed is dashed and dimmed.
     /// Every gap between two blocks is a place an effect can be added or moved to.
-    fn chain_diagram(&mut self, ui: &mut egui::Ui, data: &PatchData, layout: &ChainLayout) {
+    ///
+    /// When the chain is wider than `width` it folds like a snake: the first line runs left to right,
+    /// the next right to left below it, and so on. A parallel section always stays on one line.
+    fn chain_diagram(&mut self, ui: &mut egui::Ui, data: &PatchData, layout: &ChainLayout, width: f32) {
         let chain = data.chain();
         let pos_of = |s: u8| chain.iter().position(|&c| c == s).unwrap_or(chain.len());
         // (centre, position in the chain an effect put there would get)
@@ -577,104 +586,162 @@ impl EditorApp {
         let row_w = |slots: &[u8]| slots.iter().map(|&s| width_of(s) + GAP).sum::<f32>();
         let par_w = layout.branch.as_ref().map(|b| row_w(&b.a).max(row_w(&b.b)).max(GAP)).unwrap_or(0.0);
         let branch_w =
-            layout.branch.as_ref().map(|b| width_of(b.divider) + GAP + par_w + width_of(b.mixer) + GAP).unwrap_or(0.0);
-        let total_w = TERMINAL_W + GAP + row_w(&layout.pre) + branch_w + row_w(&layout.post) + TERMINAL_W;
-        let total_h = if layout.branch.is_some() { 2.0 * BLOCK_H + ROW_GAP } else { BLOCK_H } + 8.0;
+            layout.branch.as_ref().map(|b| width_of(b.divider) + GAP + par_w + width_of(b.mixer)).unwrap_or(0.0);
 
-        let (canvas, _) = ui.allocate_exact_size(vec2(total_w, total_h), Sense::hover());
+        let mut units = vec![Unit::In];
+        units.extend(layout.pre.iter().map(|&s| Unit::Block(s)));
+        if layout.branch.is_some() {
+            units.push(Unit::Branch);
+        }
+        units.extend(layout.post.iter().map(|&s| Unit::Block(s)));
+        units.push(Unit::Out);
+        let unit_w = |u: Unit| match u {
+            Unit::In | Unit::Out => TERMINAL_W,
+            Unit::Block(s) => width_of(s),
+            Unit::Branch => branch_w,
+        };
+
+        // Fill each line as far as the width allows (room is kept on both sides for the wire that turns).
+        let widest = units.iter().map(|&u| unit_w(u)).fold(0.0, f32::max);
+        let line_w = (width - 2.0 * TURN).max(widest);
+        let mut lines: Vec<Vec<Unit>> = vec![Vec::new()];
+        let mut used = 0.0;
+        for &u in &units {
+            let line = lines.last_mut().expect("at least one line");
+            let need = if line.is_empty() { unit_w(u) } else { used + GAP + unit_w(u) };
+            if need > line_w && !line.is_empty() {
+                lines.push(vec![u]);
+                used = unit_w(u);
+            } else {
+                line.push(u);
+                used = need;
+            }
+        }
+        let line_h = |l: &[Unit]| if l.contains(&Unit::Branch) { 2.0 * BLOCK_H + ROW_GAP } else { BLOCK_H };
+        let total_h = lines.iter().map(|l| line_h(l)).sum::<f32>() + LINE_GAP * (lines.len() - 1) as f32 + 8.0;
+
+        let (canvas, _) = ui.allocate_exact_size(vec2(line_w + 2.0 * TURN, total_h), Sense::hover());
         let painter = ui.painter_at(canvas.expand(2.0));
         let live = Wire { stroke: Stroke::new(2.0, SIGNAL), dashed: false };
         let dead = Wire { stroke: Stroke::new(1.0, Color32::from_gray(85)), dashed: true };
-        let mid_y = canvas.center().y;
-        let (row_a, row_b) = (mid_y - (BLOCK_H + ROW_GAP) / 2.0, mid_y + (BLOCK_H + ROW_GAP) / 2.0);
 
-        let terminal = |x: f32, text: &str| {
-            let r = Rect::from_center_size(pos2(x + TERMINAL_W / 2.0, mid_y), vec2(TERMINAL_W, 20.0));
-            painter.rect_stroke(r, 10.0, live.stroke, egui::StrokeKind::Inside);
-            painter.text(r.center(), egui::Align2::CENTER_CENTER, text, egui::FontId::monospace(10.0), SIGNAL);
-            r
-        };
-        let mut x = canvas.left();
-        let mut prev = terminal(x, "IN").right_center();
-        x += TERMINAL_W + GAP;
-
-        // A run of blocks on one row, wired in sequence starting from `from`. Returns the last output.
-        let run = |this: &mut Self,
-                   ui: &mut egui::Ui,
-                   gaps: &mut Vec<(Pos2, usize)>,
-                   slots: &[u8],
-                   x: &mut f32,
-                   y: f32,
-                   from: Pos2,
-                   w: Wire| {
-            let mut from = from;
-            for &s in slots {
-                let rect = Rect::from_min_size(pos2(*x, y - BLOCK_H / 2.0), vec2(width_of(s), BLOCK_H));
-                connect(&painter, w, from, rect.left_center());
-                gaps.push((pos2((from.x + rect.left()) / 2.0, y), pos_of(s)));
-                let r = this.fx_block(ui, data, s, rect, w.dashed);
-                if r.clicked() {
-                    this.selected_slot = Some(s);
-                }
-                if r.drag_started() && this.can_edit_chain() {
-                    this.chain_drag = Some(s);
-                    this.selected_slot = Some(s);
-                }
-                from = rect.right_center();
-                *x += width_of(s) + GAP;
+        // Wires the previous output to the next input and returns the middle of that wire (a gap).
+        let link = |from: Pos2, to: Pos2, w: Wire| -> Pos2 {
+            if (from.y - to.y).abs() < 0.5 {
+                connect(&painter, w, from, to);
+                return pos2((from.x + to.x) / 2.0, to.y);
             }
-            from
+            // Down to the next line, turning on the side where the previous line ended.
+            let right = to.x >= canvas.center().x;
+            let x = if right { from.x.max(to.x) + TURN / 2.0 } else { from.x.min(to.x) - TURN / 2.0 };
+            let corners = [from, pos2(x, from.y), pos2(x, to.y), to];
+            w.segment(&painter, &corners);
+            arrowhead(&painter, w, to, if to.x < x { -1.0 } else { 1.0 });
+            pos2(x, (from.y + to.y) / 2.0)
+        };
+        let block = |this: &mut Self, ui: &mut egui::Ui, s: u8, rect: Rect, dimmed: bool| {
+            let r = this.fx_block(ui, data, s, rect, dimmed);
+            if r.clicked() {
+                this.selected_slot = Some(s);
+            }
+            if r.drag_started() && this.can_edit_chain() {
+                this.chain_drag = Some(s);
+                this.selected_slot = Some(s);
+            }
+        };
+        let terminal = |rect: Rect, text: &str| {
+            painter.rect_stroke(rect, 10.0, live.stroke, egui::StrokeKind::Inside);
+            painter.text(rect.center(), egui::Align2::CENTER_CENTER, text, egui::FontId::monospace(10.0), SIGNAL);
         };
 
-        prev = run(self, ui, &mut gaps, &layout.pre, &mut x, mid_y, prev, live);
-        if let Some(b) = &layout.branch {
-            let route = divider_route(data, b.divider);
-            prev = run(self, ui, &mut gaps, &[b.divider], &mut x, mid_y, prev, live);
-            let split = prev;
-            let par_end = x + par_w - GAP;
-            let mut ends = Vec::new();
-            // The end of branch A is just before the SPLITTER; the end of B just before the MIXER.
-            for (slots, y, active, end) in
-                [(&b.a, row_a, route.a, pos_of(b.splitter)), (&b.b, row_b, route.b, pos_of(b.mixer))]
-            {
-                let w = if active { live } else { dead };
-                let mut bx = x;
-                let out = run(self, ui, &mut gaps, slots, &mut bx, y, split, w);
-                // Run the wire along the row to the end of the parallel section, so both rows meet together.
-                let row_end = pos2(par_end.max(out.x), y);
-                if slots.is_empty() {
-                    connect(&painter, w, split, row_end);
-                    gaps.push((pos2((split.x + row_end.x) / 2.0, y), end));
-                } else {
-                    w.segment(&painter, &[out, row_end]);
-                    gaps.push((pos2(out.x + GAP / 2.0, y), end));
+        let mut prev: Option<Pos2> = None;
+        let mut top = canvas.top() + 4.0;
+        for (i, units) in lines.iter().enumerate() {
+            let h = line_h(units);
+            let line = Line { left: canvas.left() + TURN, width: line_w, rtl: i % 2 == 1, y: top + h / 2.0 };
+            top += h + LINE_GAP;
+            let mut x = 0.0;
+            for &u in units {
+                let w = unit_w(u);
+                match u {
+                    Unit::In => {
+                        let r = line.rect(x, w, line.y, 20.0);
+                        terminal(r, "IN");
+                        prev = Some(line.output(r));
+                    }
+                    Unit::Out => {
+                        let r = line.rect(x, w, line.y, 20.0);
+                        if let Some(from) = prev {
+                            gaps.push((link(from, line.input(r), live), chain.len()));
+                        }
+                        terminal(r, "OUT");
+                    }
+                    Unit::Block(s) => {
+                        let r = line.rect(x, w, line.y, BLOCK_H);
+                        if let Some(from) = prev {
+                            gaps.push((link(from, line.input(r), live), pos_of(s)));
+                        }
+                        block(self, ui, s, r, false);
+                        prev = Some(line.output(r));
+                    }
+                    Unit::Branch => {
+                        let Some(b) = &layout.branch else { continue };
+                        let route = divider_route(data, b.divider);
+                        let div = line.rect(x, width_of(b.divider), line.y, BLOCK_H);
+                        if let Some(from) = prev {
+                            gaps.push((link(from, line.input(div), live), pos_of(b.divider)));
+                        }
+                        block(self, ui, b.divider, div, false);
+                        let split = line.output(div);
+                        let start = x + width_of(b.divider) + GAP;
+                        let par_end = start + par_w - GAP;
+                        let (row_a, row_b) = (line.y - (BLOCK_H + ROW_GAP) / 2.0, line.y + (BLOCK_H + ROW_GAP) / 2.0);
+                        let mut ends = Vec::new();
+                        // The end of branch A is just before the SPLITTER; the end of B just before the MIXER.
+                        for (slots, y, active, end) in
+                            [(&b.a, row_a, route.a, pos_of(b.splitter)), (&b.b, row_b, route.b, pos_of(b.mixer))]
+                        {
+                            let wire = if active { live } else { dead };
+                            let mut from = split;
+                            let mut bx = start;
+                            for &s in slots.iter() {
+                                let r = line.rect(bx, width_of(s), y, BLOCK_H);
+                                connect(&painter, wire, from, line.input(r));
+                                gaps.push((line.at((line.logical(from.x) + bx) / 2.0, y), pos_of(s)));
+                                block(self, ui, s, r, wire.dashed);
+                                from = line.output(r);
+                                bx += width_of(s) + GAP;
+                            }
+                            // Run the wire along the row to the end of the parallel section, so both rows meet together.
+                            let row_end = line.at(par_end.max(bx - GAP), y);
+                            if slots.is_empty() {
+                                connect(&painter, wire, split, row_end);
+                                gaps.push((pos2((split.x + row_end.x) / 2.0, y), end));
+                            } else {
+                                wire.segment(&painter, &[from, row_end]);
+                                gaps.push((line.ahead(from, GAP / 2.0), end));
+                            }
+                            ends.push((row_end, wire));
+                        }
+                        let mixer = line.rect(start + par_w, width_of(b.mixer), line.y, BLOCK_H);
+                        // Inactive wires first, so the live one is drawn on top where they meet.
+                        ends.sort_by_key(|(_, w)| !w.dashed);
+                        for (end, wire) in ends {
+                            connect(&painter, wire, end, line.input(mixer));
+                        }
+                        block(self, ui, b.mixer, mixer, false);
+                        prev = Some(line.output(mixer));
+                        for (label, y, active) in [("A", row_a, route.a), ("B", row_b, route.b)] {
+                            let color = if active { SIGNAL } else { dead.stroke.color };
+                            let align = if line.rtl { egui::Align2::RIGHT_TOP } else { egui::Align2::LEFT_TOP };
+                            let at = line.ahead(pos2(split.x, y - BLOCK_H / 2.0 + 2.0), 4.0);
+                            painter.text(at, align, label, egui::FontId::proportional(11.0), color);
+                        }
+                    }
                 }
-                ends.push((row_end, w));
-            }
-            x += par_w;
-            let mixer_rect = Rect::from_min_size(pos2(x, mid_y - BLOCK_H / 2.0), vec2(width_of(b.mixer), BLOCK_H));
-            // Inactive wires first, so the live one is drawn on top where they meet.
-            ends.sort_by_key(|(_, w)| !w.dashed);
-            for (end, w) in ends {
-                connect(&painter, w, end, mixer_rect.left_center());
-            }
-            prev = run(self, ui, &mut gaps, &[b.mixer], &mut x, mid_y, mixer_rect.left_center(), live);
-            gaps.pop(); // the MIXER's input is where both rows meet, not a place in the chain
-            for (label, y, active) in [("A", row_a, route.a), ("B", row_b, route.b)] {
-                let color = if active { SIGNAL } else { dead.stroke.color };
-                painter.text(
-                    pos2(split.x + 4.0, y - BLOCK_H / 2.0 + 2.0),
-                    egui::Align2::LEFT_TOP,
-                    label,
-                    egui::FontId::proportional(11.0),
-                    color,
-                );
+                x += w + GAP;
             }
         }
-        prev = run(self, ui, &mut gaps, &layout.post, &mut x, mid_y, prev, live);
-        let out = terminal(x, "OUT");
-        connect(&painter, live, prev, out.left_center());
-        gaps.push((pos2((prev.x + out.left()) / 2.0, mid_y), chain.len()));
         self.chain_gaps(ui, &painter, data, &gaps);
     }
 
@@ -939,12 +1006,13 @@ fn divider_route(data: &PatchData, slot: u8) -> Route {
     }
 }
 
-/// A wire from an output to an input: straight on one row, an S-curve between rows.
+/// A wire from an output to an input, either way across: straight on one row, an S-curve between rows.
 fn connect(painter: &egui::Painter, wire: Wire, from: Pos2, to: Pos2) {
+    let dir = if to.x < from.x { -1.0 } else { 1.0 };
     if (from.y - to.y).abs() < 0.5 {
         wire.segment(painter, &[from, to]);
     } else {
-        let dx = ((to.x - from.x) / 2.0).max(8.0);
+        let dx = ((to.x - from.x).abs() / 2.0).max(8.0) * dir;
         let curve = egui::epaint::CubicBezierShape::from_points_stroke(
             [from, pos2(from.x + dx, from.y), pos2(to.x - dx, to.y), to],
             false,
@@ -953,12 +1021,78 @@ fn connect(painter: &egui::Painter, wire: Wire, from: Pos2, to: Pos2) {
         );
         wire.segment(painter, &curve.flatten(Some(0.5)));
     }
-    // arrowhead
+    arrowhead(painter, wire, to, dir);
+}
+
+/// An arrowhead at `to`, pointing right (`dir` 1) or left (-1). None on dashed (dead) wires.
+fn arrowhead(painter: &egui::Painter, wire: Wire, to: Pos2, dir: f32) {
     if !wire.dashed {
         painter.add(egui::Shape::convex_polygon(
-            vec![to, pos2(to.x - 6.0, to.y - 3.5), pos2(to.x - 6.0, to.y + 3.5)],
+            vec![to, pos2(to.x - 6.0 * dir, to.y - 3.5), pos2(to.x - 6.0 * dir, to.y + 3.5)],
             wire.stroke.color,
             Stroke::NONE,
         ));
+    }
+}
+
+/// One piece of the chain diagram that stays on one line: a terminal, an effect, or the whole parallel section.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Unit {
+    In,
+    Out,
+    Block(u8),
+    Branch,
+}
+
+/// A line of the folded chain diagram. Positions along it (`x`) count from where the signal enters it:
+/// the left edge, or the right edge on lines that run right to left.
+#[derive(Clone, Copy)]
+struct Line {
+    left: f32,
+    width: f32,
+    rtl: bool,
+    y: f32,
+}
+
+impl Line {
+    /// The point `x` along the line, at height `y`.
+    fn at(self, x: f32, y: f32) -> Pos2 {
+        pos2(if self.rtl { self.left + self.width - x } else { self.left + x }, y)
+    }
+
+    /// How far along the line the screen position `px` is.
+    fn logical(self, px: f32) -> f32 {
+        if self.rtl {
+            self.left + self.width - px
+        } else {
+            px - self.left
+        }
+    }
+
+    /// Something `w` wide starting `x` along the line, `h` high, centred on `y`.
+    fn rect(self, x: f32, w: f32, y: f32, h: f32) -> Rect {
+        let x0 = if self.rtl { self.left + self.width - x - w } else { self.left + x };
+        Rect::from_min_size(pos2(x0, y - h / 2.0), vec2(w, h))
+    }
+
+    fn input(self, r: Rect) -> Pos2 {
+        if self.rtl {
+            r.right_center()
+        } else {
+            r.left_center()
+        }
+    }
+
+    fn output(self, r: Rect) -> Pos2 {
+        if self.rtl {
+            r.left_center()
+        } else {
+            r.right_center()
+        }
+    }
+
+    /// `p` moved `d` further along the line.
+    fn ahead(self, p: Pos2, d: f32) -> Pos2 {
+        pos2(if self.rtl { p.x - d } else { p.x + d }, p.y)
     }
 }
