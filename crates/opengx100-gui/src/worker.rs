@@ -585,22 +585,43 @@ fn current_patch(dev: &mut Dev) -> Option<u16> {
 fn demo_sim() -> SimulatedGx100 {
     let mut sim = SimulatedGx100::new();
     let temp = patch::temp_patch();
-    let mut bytes = sim.peek(temp, patch::patch_span());
     let at = |path: &str| tables::param(path).and_then(|p| p.addr.since(temp)).map(|o| o as usize);
-    let set_type = |bytes: &mut Vec<u8>, slot: u8, name: &str| {
-        let base = patch::fx_slot_base(temp, slot).and_then(|b| b.since(temp));
-        if let (Some(o), Some(t)) = (base, tables::fx_type_by_name(name)) {
-            bytes[o as usize] = t.id;
-            bytes[o as usize + 1] = 1;
+    // A chain with a parallel section: 1 2 3 → DIVIDER(4) → [5 | 7, 8] → MIXER(9) → 10. PHASER is off.
+    let slots = [
+        (1, "COMPRESSOR", true),
+        (2, "OVERDRIVE", true),
+        (3, "AIRD PREAMP", true),
+        (4, "DIVIDER", true),
+        (5, "CHORUS", true),
+        (6, "SPLITTER", true),
+        (7, "DELAY", true),
+        (8, "PHASER", false),
+        (9, "MIXER", true),
+        (10, "REVERB", true),
+    ];
+    // A type written into a slot brings that type's defaults, as in a chain edit.
+    for &(slot, name, _) in &slots {
+        if let (Some(base), Some(t)) = (patch::fx_slot_base(temp, slot), tables::fx_type_by_name(name)) {
+            let _ =
+                sim.send(&opengx100_protocol::sysex::dt1(opengx100_protocol::sysex::DEFAULT_DEVICE_ID, base, &[t.id]));
         }
-    };
-    // A chain with a parallel section: 1 → DIVIDER(2) → [3 | 5, 6] → MIXER(7) → 8
-    for (slot, name) in [(2, "DIVIDER"), (4, "SPLITTER"), (7, "MIXER")] {
-        set_type(&mut bytes, slot, name);
     }
-    let order = [1u8, 2, 3, 4, 5, 6, 7, 8];
+    let mut bytes = sim.peek(temp, patch::patch_span());
+    for &(slot, name, on) in &slots {
+        let Some(base) = patch::fx_slot_base(temp, slot).and_then(|b| b.since(temp)) else { continue };
+        bytes[base as usize + 1] = on as u8;
+        // Both branches fed.
+        if let Some(mode) =
+            (name == "DIVIDER").then(|| tables::fx_type_by_name(name)).flatten().and_then(|t| t.param("mode"))
+        {
+            if let Ok(d) = mode.spec().encode(1) {
+                let o = (base + mode.offset.linear()) as usize;
+                bytes[o..o + d.len()].copy_from_slice(&d);
+            }
+        }
+    }
     let mut prev: Option<u8> = None;
-    for &s in &order {
+    for &(s, _, _) in &slots {
         let path = match prev {
             None => "Temp_patch.efct.ChainTopItem".to_string(),
             Some(p) => format!("Temp_patch.efct.ChainNextItem{}", p - 1),
@@ -610,7 +631,7 @@ fn demo_sim() -> SimulatedGx100 {
         }
         prev = Some(s);
     }
-    if let Some(o) = at("Temp_patch.efct.ChainNextItem7") {
+    if let Some(o) = prev.and_then(|p| at(&format!("Temp_patch.efct.ChainNextItem{}", p - 1))) {
         bytes[o] = 0;
     }
     sim.poke(temp, &bytes);
