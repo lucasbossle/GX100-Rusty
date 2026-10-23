@@ -139,6 +139,19 @@ pub fn extract(app: &Path) -> Result<String, Error> {
         let text = std::fs::read_to_string(html(app).join(f)).map_err(|e| Error::Extract(format!("{f}: {e}")))?;
         files.set(JsString::from(*f), JsString::from(text.as_str()), false, &mut ctx).map_err(fail)?;
     }
+    // The chain block images, for their colours (optional: without them, blocks keep the default look).
+    if let Ok(dir) = std::fs::read_dir(html(app).join("blockImages")) {
+        for e in dir.flatten() {
+            let name = e.file_name().to_string_lossy().into_owned();
+            if !(name.starts_with("EFFECTS_") && name.ends_with(".svg")) {
+                continue;
+            }
+            if let Ok(text) = std::fs::read_to_string(e.path()) {
+                let key = JsString::from(format!("blockImages/{name}").as_str());
+                files.set(key, JsString::from(text.as_str()), false, &mut ctx).map_err(fail)?;
+            }
+        }
+    }
     ctx.register_global_property(js_string!("__files"), files, boa_engine::property::Attribute::all()).map_err(fail)?;
     // Runs one of the official editor's scripts in the shared global scope.
     let run = NativeFunction::from_copy_closure(|_, args, ctx| -> JsResult<JsValue> {

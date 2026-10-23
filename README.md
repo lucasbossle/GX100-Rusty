@@ -15,7 +15,8 @@ doing.
 
 - **Live patch editor**: always shows the patch active on the pedal and follows patch changes, footswitches and the
   expression pedal (values the pedal changes flash amber). Every patch setting, FX on/off and FX parameter is editable
-  and written immediately. The signal chain is drawn with its parallel branch (DIVIDER → A/B → MIXER).
+  and written immediately. The signal chain is drawn with its parallel branch (DIVIDER → A/B → MIXER), each effect in
+  the colour BOSS TONE STUDIO gives it (filled when on, outlined when off).
 - **Chain editing**, as in BOSS TONE STUDIO: drag an effect to move it, click between two blocks to add one, replace
   or remove the selected effect. A DIVIDER brings its SPLITTER and MIXER, and dragging it moves the whole parallel
   section. Types that don't fit are greyed out: the editor's limits (15 effects, 9 of a type, 2 preamps, one

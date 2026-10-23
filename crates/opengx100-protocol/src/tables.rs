@@ -171,6 +171,8 @@ pub struct FxTypeDef {
     /// The value written to `fxItem(n).Type`.
     pub id: u8,
     pub name: &'static str,
+    /// The block colour the official editor draws it in (RGB), if its tables name one.
+    pub color: Option<[u8; 3]>,
     pub params: &'static [FxParamDef],
 }
 
@@ -441,6 +443,18 @@ mod tests {
     #[test]
     fn fx_type_ids_match_positions() {
         assert!(FX_TYPES.iter().enumerate().all(|(i, t)| t.id as usize == i));
+    }
+
+    #[test]
+    fn block_colours() {
+        match *SOURCE {
+            TablesSource::Fixture => {
+                assert_eq!(fx_type_by_name("FX ALPHA").unwrap().color, Some([0x33, 0x66, 0x99]));
+                assert_eq!(fx_type_by_name("FX EMPTY").unwrap().color, None);
+            }
+            // every type the chain can show has one
+            TablesSource::Extracted => assert!(FX_TYPES.iter().all(|t| t.color.is_some()), "a type without colour"),
+        }
     }
 
     #[test]

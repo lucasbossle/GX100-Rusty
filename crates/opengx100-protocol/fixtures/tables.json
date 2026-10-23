@@ -1,5 +1,5 @@
 {
- "format": 1,
+ "format": 2,
  "fixture": true,
  "_note": "SYNTHETIC test tables: made-up effects and values, nothing from the official editor.",
  "product": {
@@ -295,6 +295,7 @@
   {
    "typeId": 0,
    "name": "FX ALPHA",
+   "color": "#336699",
    "parameters": [
     {
      "name": "OFF/ON",
@@ -363,6 +364,7 @@
   {
    "typeId": 1,
    "name": "FX BETA",
+   "color": "#CC8844",
    "parameters": [
     {
      "name": "RATE",

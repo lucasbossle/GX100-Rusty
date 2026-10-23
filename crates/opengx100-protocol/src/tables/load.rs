@@ -176,6 +176,13 @@ fn fx_field(p: &Json, what: &str) -> Res<FxField> {
     }
 }
 
+/// `"#RRGGBB"`.
+fn rgb(s: &str) -> Option<[u8; 3]> {
+    let h = s.strip_prefix('#').filter(|h| h.len() == 6)?;
+    let byte = |i: usize| u8::from_str_radix(h.get(i..i + 2)?, 16).ok();
+    Some([byte(0)?, byte(2)?, byte(4)?])
+}
+
 fn fx_type(j: &Json, id: u8) -> Res<FxTypeDef> {
     let name = text(j, "name");
     let params = match j.get("parameters").and_then(Json::as_array) {
@@ -204,7 +211,8 @@ fn fx_type(j: &Json, id: u8) -> Res<FxTypeDef> {
                 .collect::<Res<Vec<_>>>()?,
         ),
     };
-    Ok(FxTypeDef { id, name, params })
+    let color = j.get("color").and_then(Json::as_str).and_then(rgb);
+    Ok(FxTypeDef { id, name, color, params })
 }
 
 fn param_doc(d: &Json) -> ParamDoc {
@@ -239,7 +247,7 @@ fn docs(j: &Json) -> (&'static [FxDoc], &'static [ParamDoc]) {
 pub fn from_json(bundle: &str, guide: Option<&str>) -> Res<Tables> {
     let b = Json::parse(bundle).map_err(|e| format!("tables: {e}"))?;
     match b.get("format").and_then(int_of) {
-        Some(1) => {}
+        Some(2) => {}
         f => return Err(format!("tables: unsupported format {f:?} (re-extract them)")),
     }
     let source = if b.get("fixture").and_then(Json::as_bool) == Some(true) {
@@ -280,7 +288,7 @@ pub fn from_json(bundle: &str, guide: Option<&str>) -> Res<Tables> {
     }
     let master = match b.get("master") {
         Some(m) if !m.is_null() => fx_type(m, 99)?,
-        _ => FxTypeDef { id: 99, name: "MASTER", params: &[] },
+        _ => FxTypeDef { id: 99, name: "MASTER", color: None, params: &[] },
     };
 
     let assign = field(&b, "assign", "tables")?;

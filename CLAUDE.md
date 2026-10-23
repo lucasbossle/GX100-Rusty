@@ -187,6 +187,11 @@ sandbox, writes `extracted/*.json` incl. `tables.json`) and `opengx100-extract` 
 - Value labels: `extract.mjs` maps `bg777-pc.elf` widgets to params → `PARAM_VALUES` (338 params; a list is kept
   only if it exactly covers the param's range; dials get labels from their `<stem>-stringer` widget; assign(1)'s
   labels are copied to assign(2..20), since BTS shows every assign on one page bound to assign(1)).
+- Block colours (2026-10-22): `effect_parameter.js` gives each FX type a colour name (`"color": "brown"`, default
+  BLACK); BTS draws `blockImages/EFFECTS_<NAME>.svg` (hexagon; `_OFF` = same colour as a thin outline on black).
+  core.js reads the last `<polygon fill>` of that SVG → `effects[i].color` "#RRGGBB" → `FxTypeDef::color`. Bundle
+  format 2 (format-1 caches fail to load, so they're re-extracted). GUI: on = filled, black text; off = outline,
+  white text; DIVIDER/MIXER always filled. Fixture colours are made up.
 - FX list labels: a few lists (`indexMachineValue` in `effect_parameter.js`) aren't in stored-value order: stored value
   v is labelled `values[indexMachineValue[v]]` (BTS's own `templateValue` agrees). gen_rust emits them in value order.
 - Assigns (`assign_page_controller.js`, `disable_dial_bg.js`): TARGET indexes `ASSIGN_TARGETS` (741); effect targets

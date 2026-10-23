@@ -161,7 +161,20 @@ function extractTables(host) {
     ...(p.indexMachineValue ? { indexMachineValue: p.indexMachineValue } : {}),
     template: p.templateValue,
   })) : null;
-  const effects = fxTypes.map((t, typeId) => ({ typeId, name: t, parameters: fxParams(EP[t]) }));
+  // Block colours (chain_controller.js / ChainCell.updateColor): each type names a colour; the block image
+  // blockImages/EFFECTS_<COLOR>.svg is a hexagon filled with it (its last polygon is the block's face).
+  const colors = {};
+  const colorOf = (def) => {
+    const name = (def && def.color ? def.color : 'black').toUpperCase();
+    if (!(name in colors)) {
+      let svg = null;
+      try { svg = read(`blockImages/EFFECTS_${name}.svg`); } catch (e) { /* no image for this colour */ }
+      const fills = svg ? [...svg.matchAll(/<polygon[^>]*fill="(#[0-9A-Fa-f]{6})"/g)].map((m) => m[1].toUpperCase()) : [];
+      colors[name] = fills.length ? fills[fills.length - 1] : null;
+    }
+    return colors[name] ? { color: colors[name] } : {};
+  };
+  const effects = fxTypes.map((t, typeId) => ({ typeId, name: t, ...colorOf(EP[t]), parameters: fxParams(EP[t]) }));
   // The patch's MASTER settings, as assign targets see them.
   const master = { typeId: 99, name: 'MASTER', parameters: fxParams(EP.MASTER) };
 
@@ -198,7 +211,7 @@ function extractTables(host) {
 // it needs, in one object.
 function tablesBundle(t) {
   return {
-    format: 1,
+    format: 2,
     product: t.product,
     commands: { commands: t.commands.commands, addresses: t.commands.addresses },
     root: t.blocks.root,

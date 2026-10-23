@@ -689,35 +689,44 @@ impl EditorApp {
         let selected = self.selected_slot == Some(slot);
         let flash = slot_offset(slot).is_some_and(|o| self.flashing(o, 2));
 
-        let fill = if routing {
-            Color32::from_gray(70)
-        } else if s.on {
-            Color32::from_rgb(40, 110, 70)
-        } else {
-            Color32::from_gray(45)
+        // As the official editor draws it: an effect that is on is filled with its type's colour (black text);
+        // one that is off is only outlined in it (white text). DIVIDER and MIXER can't be off.
+        let lit = s.on || routing;
+        let (fill, edge, text_color) = match ty.and_then(|t| t.color) {
+            Some([r, g, b]) => {
+                let color = Color32::from_rgb(r, g, b);
+                if lit {
+                    (color, color, Color32::BLACK)
+                } else {
+                    (Color32::from_gray(24), color, Color32::WHITE)
+                }
+            }
+            // Tables without colours: green when on.
+            None if routing => (Color32::from_gray(70), Color32::from_gray(90), Color32::WHITE),
+            None if s.on => (Color32::from_rgb(40, 110, 70), Color32::from_gray(90), Color32::WHITE),
+            None => (Color32::from_gray(45), Color32::from_gray(90), Color32::from_gray(150)),
         };
-        let fill = if resp.hovered() { fill.gamma_multiply(1.25) } else { fill };
-        let fill = if dimmed { fill.gamma_multiply(0.45) } else { fill };
-        let stroke = if selected {
-            Stroke::new(2.0, AMBER)
-        } else if flash {
-            Stroke::new(2.0, Color32::WHITE)
-        } else {
-            Stroke::new(1.0, Color32::from_gray(90))
-        };
+        let fill = if resp.hovered() { fill.gamma_multiply(1.15) } else { fill };
+        let (fill, edge) = if dimmed { (fill.gamma_multiply(0.45), edge.gamma_multiply(0.45)) } else { (fill, edge) };
+        let text_color = if dimmed { text_color.gamma_multiply(0.6) } else { text_color };
         let painter = ui.painter();
-        painter.rect(rect, 5.0, fill, stroke, egui::StrokeKind::Inside);
-        let text_color = if s.on || routing { Color32::WHITE } else { Color32::from_gray(150) };
-        let text_color = if dimmed { text_color.gamma_multiply(0.5) } else { text_color };
+        painter.rect(rect, 5.0, fill, Stroke::new(2.5, edge), egui::StrokeKind::Inside);
+        // Selection and pedal changes are marked around the block, so its colour stays visible.
+        if selected {
+            painter.rect_stroke(rect, 5.0, Stroke::new(2.5, AMBER), egui::StrokeKind::Outside);
+        } else if flash {
+            painter.rect_stroke(rect, 5.0, Stroke::new(2.0, Color32::WHITE), egui::StrokeKind::Outside);
+        }
         // The DIVIDER says where it sends the signal.
         let caption = (name == "DIVIDER").then(|| divider_route(data, slot).label());
         if let Some(c) = &caption {
+            let color = if fill.intensity() > 0.5 { Color32::from_rgb(20, 60, 130) } else { SIGNAL };
             painter.text(
                 pos2(rect.center().x, rect.bottom() - 9.0),
                 egui::Align2::CENTER_CENTER,
                 c,
                 egui::FontId::proportional(10.0),
-                SIGNAL,
+                color,
             );
         }
         let galley =
