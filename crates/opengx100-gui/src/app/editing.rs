@@ -388,20 +388,26 @@ impl EditorApp {
 
     /// The live patch's settings row (level, BPM, key…), editable.
     pub(super) fn patch_settings_editor(&mut self, ui: &mut egui::Ui, settings: &[(&str, &str)]) {
-        ui.horizontal_wrapped(|ui| {
-            for (path, label) in settings {
-                let Some(p) = tables::param(path) else { continue };
-                let Some(v) = self.temp_value(path) else { continue };
+        // Label and control side by side, as many pairs per row as fit (a slider with its value box is the
+        // widest control).
+        const PAIR_W: f32 = 400.0;
+        let per_row = ((ui.available_width() / PAIR_W).floor() as usize).max(1);
+        let settings: Vec<_> = settings
+            .iter()
+            .filter_map(|&(path, label)| Some((path, label, tables::param(path)?, self.temp_value(path)?)))
+            .collect();
+        egui::Grid::new("patch-settings").num_columns(per_row * 2).spacing([10.0, 6.0]).show(ui, |ui| {
+            for (i, &(path, label, p, v)) in settings.iter().enumerate() {
                 let flash = patch::temp_offset(p.addr).is_some_and(|o| self.flashing(o, p.encoding.size()));
                 let color = if flash { AMBER } else { ui.visuals().weak_text_color() };
                 doc_label(ui, RichText::new(format!("{label}:")).color(color), tables::param_doc(path));
-                let new = match *label {
+                let new = match label {
                     "Key" => {
                         let keys: Vec<(i32, &str)> =
                             super::KEYS.iter().enumerate().map(|(i, k)| (i as i32, *k)).collect();
                         value_widget(
                             ui,
-                            ("set", *path),
+                            ("set", path),
                             v,
                             (p.min, p.max),
                             &keys,
@@ -412,7 +418,7 @@ impl EditorApp {
                     }
                     "BPM" => value_widget(
                         ui,
-                        ("set", *path),
+                        ("set", path),
                         v,
                         (p.min, p.max),
                         &[],
@@ -425,7 +431,9 @@ impl EditorApp {
                 if let Some(n) = new {
                     self.set_temp_param(p, n);
                 }
-                ui.add_space(10.0);
+                if (i + 1) % per_row == 0 {
+                    ui.end_row();
+                }
             }
         });
     }

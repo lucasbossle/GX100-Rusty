@@ -634,13 +634,17 @@ fn demo_sim() -> SimulatedGx100 {
     if let Some(o) = prev.and_then(|p| at(&format!("Temp_patch.efct.ChainNextItem{}", p - 1))) {
         bytes[o] = 0;
     }
-    sim.poke(temp, &bytes);
     for n in 1..=USER_PATCHES {
         let Some(addr) = patch::user_patch(n) else { continue };
         if let Some(o) = at("Temp_patch.common.Name") {
             bytes[o..o + 16].copy_from_slice(format!("DEMO {n:<11}").as_bytes());
         }
         sim.poke(addr, &bytes);
+    }
+    // The pedal is on patch 1 (`CurrentPatchNum` 0), unedited: the live patch is a copy of it.
+    if let Some(p1) = patch::user_patch(1) {
+        let stored = sim.peek(p1, patch::patch_span());
+        sim.poke(temp, &stored);
     }
     sim
 }
