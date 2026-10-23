@@ -1,6 +1,6 @@
 [package]
 name = "opengx100-gui"
-version = "0.2.0"
+version = "0.3.0"
 description = "Graphical editor for the BOSS GX-100"
 edition.workspace = true
 rust-version.workspace = true

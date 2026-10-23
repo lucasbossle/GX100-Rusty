@@ -2802,7 +2802,7 @@ checksum = "cfe21416a02c693fb9f980befcb230ecc70b0b3d1cc4abf88b9675c4c1457f0c"
 
 [[package]]
 name = "opengx100-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "opengx100-extract",
  "opengx100-midi",
@@ -2811,7 +2811,7 @@ dependencies = [
 
 [[package]]
 name = "opengx100-extract"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "boa_engine",
  "dirs",
@@ -2820,7 +2820,7 @@ dependencies = [
 
 [[package]]
 name = "opengx100-gui"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "chrono",
  "dirs",
@@ -2836,7 +2836,7 @@ dependencies = [
 
 [[package]]
 name = "opengx100-midi"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "midir",
  "opengx100-protocol",
@@ -2844,7 +2844,7 @@ dependencies = [
 
 [[package]]
 name = "opengx100-protocol"
-version = "0.2.0"
+version = "0.3.0"
 
 [[package]]
 name = "option-ext"

@@ -1,6 +1,6 @@
 [package]
 name = "opengx100-cli"
-version = "0.2.0"
+version = "0.3.0"
 description = "Command-line tool for the BOSS GX-100"
 edition.workspace = true
 rust-version.workspace = true

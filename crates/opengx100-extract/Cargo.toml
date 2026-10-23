@@ -1,6 +1,6 @@
 [package]
 name = "opengx100-extract"
-version = "0.2.0"
+version = "0.3.0"
 description = "Reads the GX-100 parameter tables from an installed BOSS TONE STUDIO (embedded JavaScript engine)"
 edition.workspace = true
 rust-version.workspace = true
