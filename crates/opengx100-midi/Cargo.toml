@@ -1,6 +1,6 @@
 [package]
 name = "opengx100-midi"
-version = "0.1.1"
+version = "0.2.0"
 description = "MIDI transport (midir) for talking to a BOSS GX-100"
 edition.workspace = true
 rust-version.workspace = true
