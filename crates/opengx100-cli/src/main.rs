@@ -4,6 +4,7 @@
 use opengx100_midi as midi;
 
 use opengx100_protocol::assign;
+use opengx100_protocol::chain;
 use opengx100_protocol::patch::{self, FX_SLOTS};
 use opengx100_protocol::session::{Device, ParamValue, Transport};
 use opengx100_protocol::sim::SimulatedGx100;
@@ -29,14 +30,16 @@ Talking to the pedal (or the simulator with --sim):
   get <path|address> [size]    read a parameter, or raw bytes at an address
   set <path> <value>           write a parameter of the live (Temp) patch
   slots                        list the live patch's FX slots
+  chain                        show the live chain, its free slots and what the pedal says
+                               still fits (read-only)
   patch [<n>]                  read a whole patch (user patch n, default: live) and
                                show its chain and every parameter in it
   monitor [<seconds>]          turn editor mode on and print what the pedal sends by
                                itself (footswitches, expression pedal, patch changes)
   write-check                  verify every kind of write with writes that change nothing:
                                re-select the current patch, WRITE it onto itself, rewrite its
-                               stored copy, write a system setting and assign 1 with their own
-                               values. Refuses if the live patch has unsaved changes.
+                               stored copy, write a system setting, assign 1 and the chain with
+                               their own values. Refuses if the live patch has unsaved changes.
   fx-get <slot>                show every parameter of FX slot <slot>
   fx-set <slot> <param> <value>
                                set an FX parameter (label or number)
@@ -116,7 +119,8 @@ fn run() -> Res {
         "fx-types" => fx_types(rest),
         "commands" => commands(),
         "ports" => ports(),
-        "identify" | "hello" | "get" | "set" | "slots" | "patch" | "monitor" | "write-check" | "fx-get" | "fx-set" => {
+        "identify" | "hello" | "get" | "set" | "slots" | "chain" | "patch" | "monitor" | "write-check" | "fx-get"
+        | "fx-set" => {
             let mut dev = connect(&o)?;
             match cmd.as_str() {
                 "identify" => Ok(()), // connect() already identified
@@ -124,6 +128,7 @@ fn run() -> Res {
                 "get" => get(&mut dev, rest),
                 "set" => set(&mut dev, rest, o.allow_system),
                 "slots" => slots(&mut dev),
+                "chain" => show_chain(&mut dev),
                 "patch" => show_patch(&mut dev, rest),
                 "monitor" => monitor(&mut dev, rest),
                 "write-check" => write_check(&mut dev),
@@ -320,6 +325,28 @@ fn slots<T: Transport>(dev: &mut Device<T>) -> Res {
     for s in dev.read_fx_slots(patch::temp_patch())? {
         let name = s.fx_type().map(|t| t.name).unwrap_or("?");
         println!("  slot {:>2}  {:<3}  {name}", s.slot, if s.on { "ON" } else { "off" });
+    }
+    Ok(())
+}
+
+fn show_chain<T: Transport>(dev: &mut Device<T>) -> Res {
+    let p = dev.read_patch(patch::temp_patch())?;
+    let limits = dev.read_chain_limits()?;
+    let name = |slot: u8| p.fx_slot(slot).and_then(|s| s.fx_type()).map(|t| t.name).unwrap_or("?");
+    println!("live patch: {:?}", p.name());
+    let links = chain::Links::read(&p).ok_or("can't read the chain")?;
+    println!("links: {:?}", links.0);
+    let types = chain::insertable_types().collect::<Vec<_>>();
+    for (i, &slot) in p.chain().iter().enumerate() {
+        let n = types.iter().filter(|t| limits.can_overwrite(t.id, i)).count();
+        println!("  {i:>2}  slot {slot:>2}  {:<22} {n}/{} types could replace it", name(slot), types.len());
+    }
+    println!("free slots: {:?}", links.free_slots());
+    let no: Vec<&str> = types.iter().filter(|t| !limits.can_insert(t.id)).map(|t| t.name).collect();
+    match (&limits.insert, no.is_empty()) {
+        (None, _) => println!("the tables don't say what fits"),
+        (Some(_), true) => println!("every FX type can be added"),
+        (Some(_), false) => println!("can't be added now: {}", no.join(", ")),
     }
     Ok(())
 }
@@ -539,6 +566,17 @@ fn write_check<T: Transport>(dev: &mut Device<T>) -> Res {
             let t = d.read_patch(patch::temp_patch())?;
             check("assign 1 MIN/MAX written back", differing_settings(&t, &temp).is_empty())?;
         }
+
+        // A chain edit that keeps the chain as it is: edit trigger on, the whole list, trigger off.
+        let live = d.read_patch(patch::temp_patch())?;
+        d.edit_chain(&chain::unchanged(&live)?)?;
+        let types: Vec<u8> = d.read_fx_slots(patch::temp_patch())?.iter().map(|s| s.type_id).collect();
+        while let Some(n) = d.next_notification(Duration::from_millis(300))? {
+            let hex: Vec<String> = n.data.iter().map(|b| format!("{b:02X}")).collect();
+            println!("    pedal sent {}  {:<24} {}", n.addr, hex.join(" "), describe(n.addr, n.data.len(), &types));
+        }
+        let t = d.read_patch(patch::temp_patch())?;
+        check("chain rewritten with itself (chain edit)", differing_settings(&t, &live).is_empty())?;
 
         let t = d.read_patch(patch::temp_patch())?;
         check("live patch untouched (lamps aside)", differing_settings(&t, &temp).is_empty())

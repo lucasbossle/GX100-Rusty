@@ -9,6 +9,7 @@
 use super::{Conn, CtlExpPage, EditorApp, AMBER, RED};
 use crate::worker::{Cmd, PatchId};
 use eframe::egui::{self, RichText};
+use opengx100_protocol::chain::Edit;
 use opengx100_protocol::patch::{self, PatchData, USER_PATCHES};
 use opengx100_protocol::session::ParamValue;
 use opengx100_protocol::tables::{self, FxParamDef, ParamDef, ParamDoc};
@@ -23,6 +24,8 @@ pub(super) enum Dialog {
     SaveInputSetting { name: String },
     /// Write the active setlist into the pedal.
     ConfirmSetlistWrite,
+    /// Remove or replace an effect (the pedal's DELETE / OVERWRITE WARNING is on). `ok`: the button.
+    ConfirmChainEdit { edit: Edit, text: String, ok: &'static str },
 }
 
 /// One row of the CTL/EXP menu: the label and the parameter-name stem (`Num1` → `Num1Function`…).
@@ -689,6 +692,21 @@ impl EditorApp {
             Dialog::ConfirmSetlistWrite => {
                 window("Write setlist to the pedal").show(ctx, |ui| {
                     keep = self.setlist_write_confirmation(ui);
+                });
+            }
+            Dialog::ConfirmChainEdit { edit, text, ok } => {
+                window("Change the chain").show(ctx, |ui| {
+                    ui.label(text.as_str());
+                    ui.label(RichText::new("Not stored until you WRITE the patch.").weak());
+                    ui.horizontal(|ui| {
+                        if ui.button(*ok).clicked() {
+                            keep = false;
+                            self.send_chain_edit(edit.clone());
+                        }
+                        if ui.button("Cancel").clicked() {
+                            keep = false;
+                        }
+                    });
                 });
             }
         }

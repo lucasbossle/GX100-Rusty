@@ -50,14 +50,11 @@ impl SimulatedGx100 {
         let temp = patch::temp_patch();
         for slot in 1..=patch::FX_SLOTS {
             let Some(base) = patch::fx_slot_base(temp, slot) else { continue };
-            let Some(fx) = tables::fx_type(sim.peek(base, 1)[0]) else { continue };
-            for p in fx.params {
-                if let Init::Num(n) = p.init {
-                    if let Ok(d) = p.spec().encode(n) {
-                        sim.poke(base.offset(p.offset.linear()), &d);
-                    }
-                }
-            }
+            sim.load_fx_defaults(base);
+        }
+        // Room for any effect anywhere (the pedal works this out from its DSP load).
+        for p in PARAMS.iter().filter(|p| p.path.starts_with("Setup_temp3.FxItemSelectableIfOverwrite")) {
+            sim.poke(p.addr, &[0x7F]);
         }
         if let Some(lvl) = tables::command("EDITOR_COMMUNICATION_LEVEL") {
             sim.poke(lvl, &[tables::PRODUCT.communication_level]);
@@ -85,6 +82,18 @@ impl SimulatedGx100 {
     pub fn silent(mut self) -> Self {
         self.silent = true;
         self
+    }
+
+    /// Fills the FX slot at `base` with the defaults of the FX type it holds.
+    fn load_fx_defaults(&mut self, base: Address) {
+        let Some(fx) = tables::fx_type(self.peek(base, 1)[0]) else { return };
+        for p in fx.params {
+            if let Init::Num(n) = p.init {
+                if let Ok(d) = p.spec().encode(n) {
+                    self.poke(base.offset(p.offset.linear()), &d);
+                }
+            }
+        }
     }
 
     pub fn poke(&mut self, addr: Address, data: &[u8]) {
@@ -158,6 +167,15 @@ impl SimulatedGx100 {
                     let bytes = self.peek(src, patch::patch_span());
                     self.poke(patch::temp_patch(), &bytes);
                 }
+            }
+            // A new FX type in a slot of the live patch (a chain edit): the slot gets that type's defaults.
+            // Assumed to be what the pedal does; the editor re-reads the patch afterwards either way.
+            sysex::DT1
+                if msg.len() == 16
+                    && (1..=patch::FX_SLOTS).any(|s| patch::fx_slot_base(patch::temp_patch(), s) == Some(addr)) =>
+            {
+                self.poke(addr, &msg[13..14]);
+                self.load_fx_defaults(addr);
             }
             sysex::DT1 => {
                 let data = msg[13..msg.len() - 2].to_vec();

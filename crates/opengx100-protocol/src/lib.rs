@@ -7,6 +7,7 @@
 //! - [`json`]: the small JSON reader they need
 //! - [`session`]: a [`session::Device`] on top of any [`session::Transport`]
 //! - [`patch`]: patch and FX-slot helpers
+//! - [`chain`]: editing the signal chain (insert, remove, move, replace effects)
 //! - [`assign`]: the 20 assigns of a patch: targets, and the messages an edit sends
 //! - [`backup`]: what a full backup holds, reading the system areas
 //! - [`librarian`]: planning a reorder/rewrite of user patches (no writes yet)
@@ -15,6 +16,7 @@
 pub mod address;
 pub mod assign;
 pub mod backup;
+pub mod chain;
 pub mod json;
 pub mod librarian;
 pub mod patch;

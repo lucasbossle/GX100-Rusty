@@ -13,6 +13,7 @@
 
 use crate::store::{self, Area, Backup};
 use opengx100_protocol::backup::{system_areas, AreaData};
+use opengx100_protocol::chain::{self, Edit, Limits};
 use opengx100_protocol::patch::{self, PatchData, USER_PATCHES};
 use opengx100_protocol::session::{Device, Notification, ParamValue, Transport};
 use opengx100_protocol::sim::SimulatedGx100;
@@ -76,6 +77,15 @@ pub enum Cmd {
     SaveInputSetting {
         name: String,
     },
+    /// Reads what the pedal says still fits into the live patch's chain.
+    ReadChainLimits,
+    /// Changes the live patch's chain, as the official editor does (see [`chain`]). `data` is the live
+    /// patch as the UI knows it; the pedal's limits are read again first. Answered by the re-read live
+    /// patch, then [`Event::ChainEdited`].
+    EditChain {
+        data: Box<PatchData>,
+        edit: Edit,
+    },
     /// Writes patches into user patch slots, in the background: (target, data).
     WriteSetlist(Vec<(u16, PatchData)>),
     CancelSetlistWrite,
@@ -116,6 +126,11 @@ pub enum Event {
     },
     /// User patch n was stored (WRITE).
     Saved(u16),
+    ChainLimits(Limits),
+    /// A chain edit is over (done or failed); `select`: the slot it added or moved.
+    ChainEdited {
+        select: Option<u8>,
+    },
     SetlistProgress {
         done: usize,
         total: usize,
@@ -348,6 +363,20 @@ pub fn run(rx: Receiver<Cmd>, wake: Sender<Cmd>, tx: Sender<Event>, notify: impl
                     Err(e) => send(Event::Error(format!("saving the input setting: {e}"))),
                 }
             }
+            Some(Cmd::ReadChainLimits) => {
+                let Some(d) = dev.as_mut() else { continue };
+                match d.read_chain_limits() {
+                    Ok(l) => send(Event::ChainLimits(l)),
+                    Err(e) => send(Event::Error(format!("reading what fits into the chain: {e}"))),
+                }
+            }
+            Some(Cmd::EditChain { data, edit }) => {
+                let Some(d) = dev.as_mut() else {
+                    send(Event::ChainEdited { select: None });
+                    continue;
+                };
+                send(Event::ChainEdited { select: edit_chain(d, &data, &edit, &send) });
+            }
             Some(Cmd::WriteSetlist(list)) => {
                 if dev.is_none() || setlist.is_some() || backup.is_some() {
                     send(Event::Error("can't write the setlist now (not connected, or busy)".into()));
@@ -497,6 +526,27 @@ fn drain_notifications(d: &mut Dev, send: &impl Fn(Event)) {
             }
         }
     }
+}
+
+/// Plans and carries out a chain edit, then re-reads the live patch (also after a failure, to show
+/// what the pedal has now). Returns the slot to select.
+fn edit_chain(d: &mut Dev, data: &PatchData, edit: &Edit, send: &impl Fn(Event)) -> Option<u8> {
+    let result = d.read_chain_limits().map_err(|e| e.to_string()).and_then(|limits| {
+        let plan = chain::plan(data, &limits, edit)?;
+        d.edit_chain(&plan).map_err(|e| e.to_string())?;
+        Ok(plan.select)
+    });
+    if let Err(e) = &result {
+        send(Event::Error(format!("changing the chain: {e}")));
+    }
+    match d.read_patch(patch::temp_patch()) {
+        Ok(p) => send(Event::Patch(PatchId::Temp, p)),
+        Err(e) => send(Event::Error(format!("re-reading the live patch: {e}"))),
+    }
+    if let Ok(l) = d.read_chain_limits() {
+        send(Event::ChainLimits(l));
+    }
+    result.ok().flatten()
 }
 
 /// The pedal needs a moment after a patch change. Like the official editor, wait until it says it
@@ -650,6 +700,35 @@ mod tests {
         assert_eq!(d.read_patch(patch::user_patch(4).unwrap()).unwrap().name(), "DEMO 3");
         let progress = events.borrow().iter().filter(|e| matches!(e, Event::SetlistProgress { .. })).count();
         assert_eq!(progress, 2);
+    }
+
+    #[test]
+    fn chain_edit_rereads_the_live_patch() {
+        if !real_tables() {
+            return;
+        }
+        let transport: Box<dyn Transport> = Box::new(demo_sim());
+        let mut d = Device::new(transport).without_pacing().with_timeout(Duration::from_millis(50));
+        let before = d.read_patch(patch::temp_patch()).unwrap();
+        let chorus = tables::fx_type_by_name("CHORUS").unwrap().id;
+        let at = before.chain().len();
+        let events = RefCell::new(Vec::new());
+        let edit = Edit::Insert { at, fx: chorus };
+        let select = edit_chain(&mut d, &before, &edit, &|e| events.borrow_mut().push(e));
+        let events = events.into_inner();
+        let Some(Event::Patch(PatchId::Temp, after)) = events.first() else { panic!("no live patch re-read") };
+        assert_eq!(after.chain().len(), at + 1);
+        let new = *after.chain().last().unwrap();
+        assert_eq!(select, Some(new));
+        assert_eq!(after.fx_slot(new).unwrap().type_id, chorus);
+        assert!(matches!(events.last(), Some(Event::ChainLimits(_))));
+
+        // refused: nothing written, the live patch is still re-read
+        let events = RefCell::new(Vec::new());
+        let gone = Edit::Remove { slot: 99 };
+        assert_eq!(edit_chain(&mut d, after, &gone, &|e| events.borrow_mut().push(e)), None);
+        assert!(matches!(events.borrow().first(), Some(Event::Error(_))));
+        assert_eq!(d.read_patch(patch::temp_patch()).unwrap().chain(), after.chain());
     }
 
     #[test]

@@ -24,14 +24,19 @@ Done in the third session:
 - Assign writes verified on the pedal; live "now" column on the Assigns page; README/CONTRIBUTING for open source.
 
 Open items, in order:
+0. **Try chain editing on the pedal** (fourth session, 2026-10-22; not tried on hardware beyond a no-op): on a
+   scratch patch, insert / move / remove / replace effects, add and remove a DIVIDER, move the parallel section.
+   Check the pedal resets the slots involved to the new type's defaults (we only write the type byte, as BTS does),
+   that assigns/knob settings pointing at moved or removed effects behave, and how the pedal handles a full chain
+   (`Setup_temp2/3` say what fits; on a 7-effect patch everything fit). Then look at the GUI: drop markers, "+"
+   in the gaps, the FX picker window.
 1. **Try the Assigns page on the pedal**: the "now" column (and "Now" row in the editor) shows each FX/MASTER
    target's live value, amber while the pedal changes it, with a bar between MIN and MAX. Unknown whether the pedal
    pushes changes made by EXP/INT PDL/WAVE assigns (footswitch toggles are pushed). Change a target on a scratch
    patch and check MIN/MAX show what the pedal reset them to.
 2. Look at the GUI (Claude can't): Assigns layout, tooltips, option notes under list params.
 3. Smaller: hide FX params that don't apply in the current mode (e.g. CHORUS `rate-1/-2` only in STEREO modes; see
-   how `effect_parameter.js` / chain UI decide visibility); change FX type / chain order (needs tracing the official
-   chain-edit sequence: `CHAIN_EDIT_TRIGGER`, `FX_SELECTABLE`, `FX_OVERWRITE` in `chain_controller.js`); decode
+   how `effect_parameter.js` / chain UI decide visibility); decode
    `led.OnOffState`; Restore from backup (writes; same block order as the librarian); `.tsl` live-set import/export;
    optionally save backups as `.alb` so BTS can restore them; HARMONIST "canShift" target names (BTS renames some
    harmonist targets by key); KNOB SETTINGS (not traced yet).
@@ -72,13 +77,17 @@ sandbox, writes `extracted/*.json` incl. `tables.json`) and `opengx100-extract` 
   - `patch` — `PatchData` (a whole patch, linear bytes; `name`, `value`, `chain`, `chain_layout` with DIVIDER/
     SPLITTER/MIXER branch, `fx_slot`, `fx_param`, `apply`), `patch_blocks()` (derived from PARAMS),
     `Device::read_patch/read_patch_name/select_patch/write_user_patch/load_into_temp`
+  - `chain` — chain edits as BTS does them: `Links` (the linked list, 50 values: `ChainTopItem` + 49
+    `ChainNextItem`), `Kind`, `Limits` (`Setup_temp2/3`, `Device::read_chain_limits`), `Edit` (Insert/Remove/Move/
+    Replace) → `plan()` (rules + messages) → `Device::edit_chain`; `unchanged()` = the no-op used by `write-check`
   - `assign` — the 20 assigns: `target` (→ `Target::Fx/Master/Tuner/MidiCc/MidiPc`), `category_choices`,
     `targets_for`, `applies` (what BTS greys out), and edits that return BTS's messages (`set_field`, `set_target`,
     `set_category`, `block_message`)
   - `librarian` — `plan_moves`, `write_messages` (user patch), `temp_write_messages` (efct first), `wire_cost`
   - `backup` — `SYSTEM_AREAS` (24, BTS's `SystemSetting`), `Device::read_system_areas`
   - `sim` — in-memory pedal: answers RQ1/identity/IS_RQ1_ACCEPT, handles PATCH_WRITE, CurrentPatchNum (loads the
-    patch into Temp), SETTING_WRITE_CMD; `push_unsolicited` fakes pedal-initiated DT1s
+    patch into Temp), SETTING_WRITE_CMD, a 1-byte write to an FX slot's Type (loads that type's defaults: assumed,
+    not verified on the pedal), `Setup_temp3` all 7F (anything fits); `push_unsolicited` fakes pedal-initiated DT1s
 - `crates/opengx100-midi` — midir transport (`open`, `open_with_waker`, `port_names`), shared by CLI and GUI
 - `crates/opengx100-cli` — `opengx100` binary (MIDI behind default feature `midi`): `ports identify hello get set slots patch
   monitor write-check fx-get fx-set find fx-types commands`
@@ -110,7 +119,11 @@ sandbox, writes `extracted/*.json` incl. `tables.json`) and `opengx100-extract` 
   amber bar on pedal FX). Clicking a patch in the list switches the pedal to it (asks first if there are unsaved
   edits). Every patch setting, FX on/off and FX parameter is editable and written immediately. "● edited" = live patch
   differs from the stored copy. **Write…** = PATCH_WRITE (name + target slot, warns when replacing another patch).
-  **Revert** = load the stored copy into the live patch.
+  **Revert** = load the stored copy into the live patch. **Chain editing** (`app/chain_edit.rs`): drag a block onto
+  a gap to move it (DIVIDER/MIXER drag the whole section), click "+" in a gap to add an effect (FX picker window,
+  greyed types say why on hover), ◀ ▶ / Replace… / Remove(branch) next to the selected effect's name. Confirm dialog
+  only when the pedal's DELETE/OVERWRITE WARNING is on (as BTS). The worker re-reads the limits, plans, writes, then
+  re-reads the live patch (`Cmd::EditChain` → `Event::Patch` + `Event::ChainEdited`).
 - **CTL/EXP**: per control (NUM1-4, CURNUM, BANK▼▲, CTL1-4, EXP1 SW, EXP1 PEDAL, EXP2, MANUAL1-4): PREFERENCE
   (MEMORY = patch's own setting / SYSTEM = system-wide; `System_control.<x>Preference`), patch function/mode
   (`Temp_patch.common.<x>Function/Mode`), system function/mode (`System_control.<x>Function/Mode`); the one in use
@@ -188,6 +201,17 @@ sandbox, writes `extracted/*.json` incl. `tables.json`) and `opengx100-extract` 
   target/category change. The simulator doesn't model the reset. Lamps (`led.OnOffState`) can change too; TUNER ON/OFF is 0/1; MIDI targets use MIDI_CC_VALUE_MIN/MAX. SOURCE 16/17 (EXP1/2),
   18 (INT PDL), 19 (WAVE PDL), 20 (INPUT) decide which fields apply. Two targets have no matching parameter in BTS's
   own tables (AIRD BASS PREAMP `mic-dist`, DIVIDER `signal-mix`); BTS shows no range for them, neither do we.
+- **Chain edits** (`chain_controller.js`, traced 2026-10-22): `Setup_temp.ChainEditTrigger` (`00 20 00 03`) = 1;
+  for each new slot DT1 `fxItem(n).Type` (1 byte; DIVIDER → DIVIDER, SPLITTER, MIXER in the first three free
+  slots); then the whole list in one DT1 (`efct` + 12, 50 bytes); trigger = 0 (BTS sends it when a drag ends). Free
+  item = points at itself. Remove = list only (BTS's `Parameter.initialize` is local). Replace = remove (list without
+  the slot), wait for an answer, then type + list with the slot back in the same place (BG777BTS-309). Rules: ≤ 15
+  effects (DIVIDER/PHRASE LOOP/SEND/RETURN don't count), ≤ 9 of one type, ≤ 2 AIRD (BASS) PREAMP, one DIVIDER/
+  PHRASE LOOP/SEND/RETURN; DIVIDER/MIXER move the whole section, not into itself. `Setup_temp2.FxItemSelectable(t+1)`
+  = 1 → type t can be added; `Setup_temp3` = 3 × 83 bytes, bit `p % 7` of byte `(p / 7) * 83 + t` → t can replace
+  position p (BTS's RQ1 for section B uses a wrong address; we read the whole block). The pedal answers these
+  without editor mode and, in editor mode, **pushes Setup_temp3 and Setup_temp2 itself after a chain edit**, plus
+  the fxItem blocks and knob settings. No-op chain edit verified on the pedal (`write-check`, 2026-10-22).
 
 ## Commands
 ```sh

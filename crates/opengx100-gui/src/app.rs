@@ -3,6 +3,7 @@
 
 mod assigns;
 mod backups;
+mod chain_edit;
 mod editing;
 mod setlists;
 
@@ -11,6 +12,7 @@ use crate::worker::{self, Cmd, Event, PatchId};
 use editing::Dialog;
 use eframe::egui::{self, pos2, vec2, Color32, Pos2, Rect, RichText, Sense, Stroke};
 use opengx100_protocol::backup::AreaData;
+use opengx100_protocol::chain::Limits;
 use opengx100_protocol::patch::{self, ChainLayout, PatchData, FX_SLOTS, USER_PATCHES};
 use opengx100_protocol::tables::{self, FxField, FxParamDef, FxTypeDef};
 use std::collections::HashMap;
@@ -106,6 +108,14 @@ pub struct EditorApp {
     system: Vec<AreaData>,
     selected_slot: Option<u8>,
     show_unused: bool,
+    /// What the pedal says still fits into the live chain (read again with every live-patch read).
+    chain_limits: Option<Limits>,
+    /// A chain edit is on its way to the pedal.
+    chain_busy: bool,
+    /// The chain block being dragged (its slot).
+    chain_drag: Option<u8>,
+    /// The FX type list, open to add or replace an effect.
+    picker: Option<chain_edit::Picker>,
     filter: String,
     last_error: Option<String>,
     /// Good news to show once (e.g. where a backup was saved).
@@ -160,6 +170,10 @@ impl EditorApp {
             system: Vec::new(),
             selected_slot: None,
             show_unused: false,
+            chain_limits: None,
+            chain_busy: false,
+            chain_drag: None,
+            picker: None,
             filter: String::new(),
             last_error: None,
             notice: None,
@@ -213,6 +227,10 @@ impl EditorApp {
         self.loading.clear();
         self.recent.clear();
         self.system.clear();
+        self.chain_limits = None;
+        self.chain_busy = false;
+        self.chain_drag = None;
+        self.picker = None;
         self.dialog = None;
         self.setlist_write = None;
         self.last_error = None;
@@ -270,6 +288,9 @@ impl EditorApp {
                     if let PatchId::User(n) = id {
                         self.fill_setlist_entries(n, &data);
                     }
+                    if id == PatchId::Temp && !self.chain_busy {
+                        let _ = self.tx.send(Cmd::ReadChainLimits);
+                    }
                     self.patches.insert(id, data);
                 }
                 Event::TempChanged { offset, data } => {
@@ -298,6 +319,13 @@ impl EditorApp {
                 Event::Saved(n) => {
                     if self.current == Some(n) || self.view == View::Patch {
                         self.notice = Some(format!("Patch {n:03} written."));
+                    }
+                }
+                Event::ChainLimits(l) => self.chain_limits = Some(l),
+                Event::ChainEdited { select } => {
+                    self.chain_busy = false;
+                    if select.is_some() {
+                        self.selected_slot = select;
                     }
                 }
                 Event::SetlistProgress { done, total } => self.setlist_write = Some((done, total)),
@@ -499,13 +527,22 @@ impl EditorApp {
         ui.horizontal(|ui| {
             ui.label(RichText::new("Signal chain").strong());
             ui.checkbox(&mut self.show_unused, "show unused slots");
+            if self.chain_busy {
+                ui.spinner();
+                ui.label("changing the chain…");
+            } else if self.connected() {
+                ui.label(RichText::new("drag an effect to move it · click between two to add one").weak());
+            }
         });
         let layout = data.chain_layout();
         let chain = data.chain();
         if self.selected_slot.is_none() {
             self.selected_slot = chain.iter().copied().find(|&s| !is_routing(&data, s));
         }
-        egui::ScrollArea::horizontal().id_salt("chain").show(ui, |ui| self.chain_diagram(ui, &data, &layout));
+        egui::ScrollArea::horizontal()
+            .id_salt("chain")
+            .scroll_source(SCROLL_NOT_DRAG)
+            .show(ui, |ui| self.chain_diagram(ui, &data, &layout));
         if self.show_unused {
             let unused: Vec<u8> = (1..=FX_SLOTS).filter(|s| !chain.contains(s)).collect();
             if !unused.is_empty() {
@@ -530,11 +567,12 @@ impl EditorApp {
     /// The chain as boxes and wires. A parallel section is drawn as two rows that leave the
     /// DIVIDER and meet again at the MIXER; the SPLITTER (only a marker) isn't drawn.
     /// The path the signal takes is drawn bright; a branch the DIVIDER doesn't feed is dashed and dimmed.
+    /// Every gap between two blocks is a place an effect can be added or moved to.
     fn chain_diagram(&mut self, ui: &mut egui::Ui, data: &PatchData, layout: &ChainLayout) {
-        if layout.pre.is_empty() && layout.branch.is_none() {
-            ui.label(RichText::new("(empty chain)").weak());
-            return;
-        }
+        let chain = data.chain();
+        let pos_of = |s: u8| chain.iter().position(|&c| c == s).unwrap_or(chain.len());
+        // (centre, position in the chain an effect put there would get)
+        let mut gaps: Vec<(Pos2, usize)> = Vec::new();
         let width_of = |s: u8| if is_routing(data, s) { ROUTING_W } else { BLOCK_W };
         let row_w = |slots: &[u8]| slots.iter().map(|&s| width_of(s) + GAP).sum::<f32>();
         let par_w = layout.branch.as_ref().map(|b| row_w(&b.a).max(row_w(&b.b)).max(GAP)).unwrap_or(0.0);
@@ -561,12 +599,25 @@ impl EditorApp {
         x += TERMINAL_W + GAP;
 
         // A run of blocks on one row, wired in sequence starting from `from`. Returns the last output.
-        let run = |this: &mut Self, ui: &mut egui::Ui, slots: &[u8], x: &mut f32, y: f32, from: Pos2, w: Wire| {
+        let run = |this: &mut Self,
+                   ui: &mut egui::Ui,
+                   gaps: &mut Vec<(Pos2, usize)>,
+                   slots: &[u8],
+                   x: &mut f32,
+                   y: f32,
+                   from: Pos2,
+                   w: Wire| {
             let mut from = from;
             for &s in slots {
                 let rect = Rect::from_min_size(pos2(*x, y - BLOCK_H / 2.0), vec2(width_of(s), BLOCK_H));
                 connect(&painter, w, from, rect.left_center());
-                if this.fx_block(ui, data, s, rect, w.dashed).clicked() {
+                gaps.push((pos2((from.x + rect.left()) / 2.0, y), pos_of(s)));
+                let r = this.fx_block(ui, data, s, rect, w.dashed);
+                if r.clicked() {
+                    this.selected_slot = Some(s);
+                }
+                if r.drag_started() && this.can_edit_chain() {
+                    this.chain_drag = Some(s);
                     this.selected_slot = Some(s);
                 }
                 from = rect.right_center();
@@ -575,23 +626,28 @@ impl EditorApp {
             from
         };
 
-        prev = run(self, ui, &layout.pre, &mut x, mid_y, prev, live);
+        prev = run(self, ui, &mut gaps, &layout.pre, &mut x, mid_y, prev, live);
         if let Some(b) = &layout.branch {
             let route = divider_route(data, b.divider);
-            prev = run(self, ui, &[b.divider], &mut x, mid_y, prev, live);
+            prev = run(self, ui, &mut gaps, &[b.divider], &mut x, mid_y, prev, live);
             let split = prev;
             let par_end = x + par_w - GAP;
             let mut ends = Vec::new();
-            for (slots, y, active) in [(&b.a, row_a, route.a), (&b.b, row_b, route.b)] {
+            // The end of branch A is just before the SPLITTER; the end of B just before the MIXER.
+            for (slots, y, active, end) in
+                [(&b.a, row_a, route.a, pos_of(b.splitter)), (&b.b, row_b, route.b, pos_of(b.mixer))]
+            {
                 let w = if active { live } else { dead };
                 let mut bx = x;
-                let out = run(self, ui, slots, &mut bx, y, split, w);
+                let out = run(self, ui, &mut gaps, slots, &mut bx, y, split, w);
                 // Run the wire along the row to the end of the parallel section, so both rows meet together.
                 let row_end = pos2(par_end.max(out.x), y);
                 if slots.is_empty() {
                     connect(&painter, w, split, row_end);
+                    gaps.push((pos2((split.x + row_end.x) / 2.0, y), end));
                 } else {
                     w.segment(&painter, &[out, row_end]);
+                    gaps.push((pos2(out.x + GAP / 2.0, y), end));
                 }
                 ends.push((row_end, w));
             }
@@ -602,7 +658,8 @@ impl EditorApp {
             for (end, w) in ends {
                 connect(&painter, w, end, mixer_rect.left_center());
             }
-            prev = run(self, ui, &[b.mixer], &mut x, mid_y, mixer_rect.left_center(), live);
+            prev = run(self, ui, &mut gaps, &[b.mixer], &mut x, mid_y, mixer_rect.left_center(), live);
+            gaps.pop(); // the MIXER's input is where both rows meet, not a place in the chain
             for (label, y, active) in [("A", row_a, route.a), ("B", row_b, route.b)] {
                 let color = if active { SIGNAL } else { dead.stroke.color };
                 painter.text(
@@ -614,15 +671,17 @@ impl EditorApp {
                 );
             }
         }
-        prev = run(self, ui, &layout.post, &mut x, mid_y, prev, live);
+        prev = run(self, ui, &mut gaps, &layout.post, &mut x, mid_y, prev, live);
         let out = terminal(x, "OUT");
         connect(&painter, live, prev, out.left_center());
+        gaps.push((pos2((prev.x + out.left()) / 2.0, mid_y), chain.len()));
+        self.chain_gaps(ui, &painter, data, &gaps);
     }
 
     /// One clickable box: FX type name, lit when on, flashing when the pedal just changed it,
     /// with a bar for the expression-pedal position on pedal effects. `dimmed`: no signal reaches it.
     fn fx_block(&self, ui: &mut egui::Ui, data: &PatchData, slot: u8, rect: Rect, dimmed: bool) -> egui::Response {
-        let resp = ui.interact(rect, egui::Id::unique(("fx-block", slot)), Sense::click());
+        let resp = ui.interact(rect, egui::Id::unique(("fx-block", slot)), Sense::click_and_drag());
         let Some(s) = data.fx_slot(slot) else { return resp };
         let ty = s.fx_type();
         let name = ty.map(|t| t.name).unwrap_or("UNKNOWN");
@@ -677,7 +736,15 @@ impl EditorApp {
             painter.rect_filled(Rect::from_min_size(track.min, vec2(track.width() * frac, track.height())), 2.0, AMBER);
         }
         let about = ty.and_then(|t| tables::fx_doc(t.name)).and_then(|d| d.text.lines().next()).unwrap_or("");
-        resp.on_hover_text(format!("slot {slot} · {}\n{about}", if s.on { "ON" } else { "OFF" }).trim_end().to_string())
+        let drag = if self.can_edit_chain() && name != "SPLITTER" { " · drag to move" } else { "" };
+        let state = if routing {
+            ""
+        } else if s.on {
+            " · ON"
+        } else {
+            " · OFF"
+        };
+        resp.on_hover_text(format!("slot {slot}{state}{drag}\n{about}").trim_end().to_string())
     }
 
     /// Every parameter of the effect in `slot`, editable. Values the pedal just changed are highlighted.
@@ -699,6 +766,7 @@ impl EditorApp {
                 self.set_fx_switch(slot, !s.on);
             }
             ui.label(RichText::new(format!("slot {slot}")).weak());
+            self.chain_buttons(ui, data, slot);
         });
         // What the effect does (and what it models), from the parameter guide.
         if let Some(d) = doc.filter(|d| !d.text.is_empty()) {
@@ -780,6 +848,7 @@ impl eframe::App for EditorApp {
             },
         });
         let ctx = ui.ctx().clone();
+        self.fx_picker(&ctx);
         self.dialogs(&ctx);
     }
 }
