@@ -124,8 +124,10 @@ function extractTables(host) {
     const labels = resources[+it['resource-id']]?.values;
     if (!f || !labels) { skipped++; continue; }
     // A list must cover the parameter's range exactly (the widget's own range is sometimes one too wide,
-    // e.g. the assign SOURCE list).
-    if (labels.length !== f.max - f.min + 1 || +it.min !== f.min) { skipped++; continue; }
+    // e.g. the assign SOURCE list). Some widgets show the range shifted (the tuner's reference pitch: 435-445
+    // for 0-10); their span still has to match.
+    const shifted = +it.max - +it.min === f.max - f.min;
+    if (labels.length !== f.max - f.min + 1 || (+it.min !== f.min && !shifted)) { skipped++; continue; }
     const min = f.min;
     const prev = paramValues.get(f.path);
     if (prev && prev.labels.join() !== labels.join()) { host.log(`labels differ for ${f.path}; keeping the first`); continue; }
@@ -211,7 +213,7 @@ function extractTables(host) {
 // it needs, in one object.
 function tablesBundle(t) {
   return {
-    format: 2,
+    format: 3,
     product: t.product,
     commands: { commands: t.commands.commands, addresses: t.commands.addresses },
     root: t.blocks.root,

@@ -21,6 +21,9 @@ doing.
   or remove the selected effect. A DIVIDER brings its SPLITTER and MIXER, and dragging it moves the whole parallel
   section. Types that don't fit are greyed out: the editor's limits (15 effects, 9 of a type, 2 preamps, one
   DIVIDER/PHRASE LOOP/SEND/RETURN) and what the pedal says its DSP can still take.
+- **Tuner**: the pedal's MONO, POLY and TT tuners on screen (note and needle, or one bar per string), with
+  reference pitch, tuner output, instrument type and TT string. The pedal shows its tuner while the tab is open;
+  its tuner footswitch opens and closes the tab.
 - **WRITE / Revert**: store the live patch into any slot (warns before replacing another patch), or drop unsaved edits.
 - **CTL/EXP**: per-control functions (patch or system), and the patch's **20 assigns** with a full editor (target,
   min/max in the target's units, source, mode, act range, internal/wave pedal, MIDI CC/PC) and a live "now" column.
@@ -86,6 +89,7 @@ cargo run -p opengx100-cli -- <command>            # add --sim to use the simula
   patch [<n>]                                  dump a stored patch (or the live one): chain, parameters, assigns
   slots | fx-get <slot>                        the live patch's FX slots / one slot's parameters
   chain                                        the live chain, free slots, what the pedal says still fits
+  tuner [<seconds>]                            show the pedal's tuner and print what it measures
   get <path|address> [size]                    read a parameter or raw bytes
   set <path> <value>                           write a live-patch parameter (--allow-system for system settings)
   fx-set <slot> <param> <value>                e.g. fx-set 3 drive 80

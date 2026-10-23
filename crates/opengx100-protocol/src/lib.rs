@@ -11,6 +11,7 @@
 //! - [`assign`]: the 20 assigns of a patch: targets, and the messages an edit sends
 //! - [`backup`]: what a full backup holds, reading the system areas
 //! - [`librarian`]: planning a reorder/rewrite of user patches (no writes yet)
+//! - [`tuner`]: the pedal's tuner: switching it on/off, decoding what it sends
 //! - [`sim`]: an in-memory pedal for tests and offline use
 
 pub mod address;
@@ -24,6 +25,7 @@ pub mod session;
 pub mod sim;
 pub mod sysex;
 pub mod tables;
+pub mod tuner;
 pub mod value;
 
 pub use address::Address;

@@ -96,6 +96,35 @@ impl SimulatedGx100 {
         }
     }
 
+    /// Made-up tuner readings: an A string a little flat, and a six-string guitar for POLY, mostly in tune;
+    /// for TT, string 5 (A).
+    fn push_demo_tuner(&mut self) {
+        use crate::tuner::{Reading, Readings};
+        let r = |note, value, in_tune| Reading { note, value, in_tune };
+        let readings = Readings {
+            mono: r(45, 4650, false),
+            strings: [
+                r(64, 5000, true),
+                r(59, 5600, false),
+                r(55, 4300, false),
+                r(50, 5000, true),
+                r(45, 4650, false),
+                r(40, 5000, true),
+                r(0, 0, false),
+            ],
+        };
+        if let Some(at) = tables::command("TUNER") {
+            self.push_unsolicited(at, &readings.encode());
+        }
+        for (path, v) in
+            [("Setup_temp.TTTargetStringNum", 5u8), ("Setup_temp.TTTargetName", 9), ("Setup_temp.TTCentOffset", 0)]
+        {
+            if let Some(p) = tables::param(path) {
+                self.push_unsolicited(p.addr, &[v]);
+            }
+        }
+    }
+
     pub fn poke(&mut self, addr: Address, data: &[u8]) {
         for (i, &b) in data.iter().enumerate() {
             self.mem.insert(addr.linear() + i as u32, b);
@@ -166,6 +195,13 @@ impl SimulatedGx100 {
                 if let Some(src) = p.spec().decode(&data).ok().and_then(|i| patch::user_patch(i as u16 + 1)) {
                     let bytes = self.peek(src, patch::patch_span());
                     self.poke(patch::temp_patch(), &bytes);
+                }
+            }
+            // The tuner shown: answer with one set of readings, as the pedal streams them while it runs.
+            sysex::DT1 if Some(addr) == tables::command("RUNNING_MODE") && msg.len() == 16 => {
+                self.poke(addr, &msg[13..14]);
+                if msg[13] != 0 {
+                    self.push_demo_tuner();
                 }
             }
             // A new FX type in a slot of the live patch (a chain edit): the slot gets that type's defaults.

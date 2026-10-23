@@ -6,6 +6,7 @@ mod backups;
 mod chain_edit;
 mod editing;
 mod setlists;
+mod tuner;
 
 use crate::store::{Backup, BackupInfo, Setlist, Store};
 use crate::worker::{self, Cmd, Event, PatchId};
@@ -77,6 +78,8 @@ enum View {
     InOut,
     /// System settings.
     System,
+    /// The pedal's tuner (shown on the pedal while this is open).
+    Tuner,
 }
 
 /// The two pages of the CTL/EXP tab, as in the official editor.
@@ -120,6 +123,7 @@ pub struct EditorApp {
     chain_drag: Option<u8>,
     /// The FX type list, open to add or replace an effect.
     picker: Option<chain_edit::Picker>,
+    tuner: tuner::TunerState,
     filter: String,
     last_error: Option<String>,
     /// Good news to show once (e.g. where a backup was saved).
@@ -178,6 +182,7 @@ impl EditorApp {
             chain_busy: false,
             chain_drag: None,
             picker: None,
+            tuner: Default::default(),
             filter: String::new(),
             last_error: None,
             notice: None,
@@ -235,6 +240,7 @@ impl EditorApp {
         self.chain_busy = false;
         self.chain_drag = None;
         self.picker = None;
+        self.tuner = Default::default();
         self.dialog = None;
         self.setlist_write = None;
         self.last_error = None;
@@ -326,6 +332,8 @@ impl EditorApp {
                     }
                 }
                 Event::ChainLimits(l) => self.chain_limits = Some(l),
+                Event::Tuner(r) => self.tuner.update(r),
+                Event::RunningMode(m) => self.pedal_running_mode(m),
                 Event::ChainEdited { select } => {
                     self.chain_busy = false;
                     if select.is_some() {
@@ -367,6 +375,9 @@ impl EditorApp {
             let backups = if self.backup_progress.is_some() { "Backups ⟳" } else { "Backups" };
             ui.selectable_value(&mut self.view, View::Backups, backups)
                 .on_hover_text("Back up everything on the pedal");
+            ui.separator();
+            ui.selectable_value(&mut self.view, View::Tuner, "Tuner")
+                .on_hover_text("Show the pedal's tuner (it stays on while this page is open)");
             ui.separator();
             match &self.conn {
                 Conn::Connecting => {
@@ -880,6 +891,7 @@ impl EditorApp {
 impl eframe::App for EditorApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.handle_events();
+        self.sync_tuner();
         self.autosave(ctx);
         if !self.recent.is_empty() {
             ctx.request_repaint_after(Duration::from_millis(100)); // let highlights fade
@@ -921,6 +933,7 @@ impl eframe::App for EditorApp {
                 View::InOut => self.in_out_view(ui),
                 View::System => self.system_view(ui),
                 View::Patch => self.patch_view(ui),
+                View::Tuner => self.tuner_view(ui),
             },
         });
         let ctx = ui.ctx().clone();
@@ -934,6 +947,9 @@ impl Drop for EditorApp {
     /// Also saves a setlist changed in the last moments.
     fn drop(&mut self) {
         self.save_active_setlist();
+        if self.tuner.on {
+            let _ = self.tx.send(Cmd::TunerOff);
+        }
         let _ = self.tx.send(Cmd::Shutdown);
         if let Some(w) = self.worker.take() {
             let _ = w.join();

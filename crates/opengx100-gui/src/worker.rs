@@ -18,9 +18,12 @@ use opengx100_protocol::patch::{self, PatchData, USER_PATCHES};
 use opengx100_protocol::session::{Device, Notification, ParamValue, Transport};
 use opengx100_protocol::sim::SimulatedGx100;
 use opengx100_protocol::tables;
+use opengx100_protocol::tuner::{self, Readings};
 use opengx100_protocol::Address;
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender, TryRecvError};
+use std::sync::Arc;
 use std::time::Duration;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -77,6 +80,10 @@ pub enum Cmd {
     SaveInputSetting {
         name: String,
     },
+    /// Shows the pedal's tuner of this kind (also to change the kind while it's shown).
+    TunerOn(tuner::Kind),
+    /// Back to playing.
+    TunerOff,
     /// Reads what the pedal says still fits into the live patch's chain.
     ReadChainLimits,
     /// Changes the live patch's chain, as the official editor does (see [`chain`]). `data` is the live
@@ -127,6 +134,10 @@ pub enum Event {
     /// User patch n was stored (WRITE).
     Saved(u16),
     ChainLimits(Limits),
+    /// What the pedal's tuner measures (sent many times a second while it's shown).
+    Tuner(Readings),
+    /// The pedal's running mode changed: 0 playing, 1 MONO/TT tuner, 2 POLY tuner (e.g. its tuner footswitch).
+    RunningMode(u8),
     /// A chain edit is over (done or failed); `select`: the slot it added or moved.
     ChainEdited {
         select: Option<u8>,
@@ -229,6 +240,9 @@ pub fn run(rx: Receiver<Cmd>, wake: Sender<Cmd>, tx: Sender<Event>, notify: impl
     let mut names: VecDeque<u16> = VecDeque::new();
     let mut backup: Option<BackupJob> = None;
     let mut setlist: Option<SetlistJob> = None;
+    // Set while a MidiArrived is queued: one wake-up is enough, however many messages arrive before it's
+    // handled (the tuner and the expression pedal send many a second, which would starve the background jobs).
+    let woken = Arc::new(AtomicBool::new(false));
     let send = |e: Event| {
         let _ = tx.send(e);
         notify();
@@ -256,7 +270,7 @@ pub fn run(rx: Receiver<Cmd>, wake: Sender<Cmd>, tx: Sender<Event>, notify: impl
                 if let Some(job) = setlist.take() {
                     send(Event::SetlistDone { written: job.written, total: job.total });
                 }
-                match connect(sim, wake.clone()) {
+                match connect(sim, wake.clone(), woken.clone()) {
                     Ok((mut d, desc)) => {
                         let current = current_patch(&mut d);
                         // The simulator never pushes anything; a real pedal does once in editor mode.
@@ -363,6 +377,19 @@ pub fn run(rx: Receiver<Cmd>, wake: Sender<Cmd>, tx: Sender<Event>, notify: impl
                     Err(e) => send(Event::Error(format!("saving the input setting: {e}"))),
                 }
             }
+            Some(Cmd::TunerOn(kind)) => {
+                let Some(d) = dev.as_mut() else { continue };
+                match d.tuner_on(kind) {
+                    Ok(()) => drain_notifications(d, &send),
+                    Err(e) => send(Event::Error(format!("switching the tuner on: {e}"))),
+                }
+            }
+            Some(Cmd::TunerOff) => {
+                let Some(d) = dev.as_mut() else { continue };
+                if let Err(e) = d.tuner_off() {
+                    send(Event::Error(format!("switching the tuner off: {e}")));
+                }
+            }
             Some(Cmd::ReadChainLimits) => {
                 let Some(d) = dev.as_mut() else { continue };
                 match d.read_chain_limits() {
@@ -392,6 +419,7 @@ pub fn run(rx: Receiver<Cmd>, wake: Sender<Cmd>, tx: Sender<Event>, notify: impl
                 }
             }
             Some(Cmd::MidiArrived) => {
+                woken.store(false, Ordering::SeqCst);
                 if let Some(d) = dev.as_mut() {
                     drain_notifications(d, &send);
                 }
@@ -452,12 +480,14 @@ pub fn run(rx: Receiver<Cmd>, wake: Sender<Cmd>, tx: Sender<Event>, notify: impl
     }
 }
 
-fn connect(sim: bool, wake: Sender<Cmd>) -> Result<(Dev, String), String> {
+fn connect(sim: bool, wake: Sender<Cmd>, woken: Arc<AtomicBool>) -> Result<(Dev, String), String> {
     let (transport, desc): (Box<dyn Transport>, String) = if sim {
         (Box::new(demo_sim()), "simulated GX-100".into())
     } else {
         let t = opengx100_midi::open_with_waker(None, move || {
-            let _ = wake.send(Cmd::MidiArrived);
+            if !woken.swap(true, Ordering::SeqCst) {
+                let _ = wake.send(Cmd::MidiArrived);
+            }
         })?;
         let desc = format!("GX-100 on {}", t.in_name);
         (Box::new(t), desc)
@@ -500,6 +530,12 @@ fn drain_notifications(d: &mut Dev, send: &impl Fn(Event)) {
         // WRITE pressed on the pedal: that user patch changed.
         if Some(n.addr) == tables::command("PATCH_WRITE") && n.data.len() >= 2 {
             stored_on_pedal.push((n.data[0] as u16) << 7 | n.data[1] as u16);
+        } else if Some(n.addr) == tables::command("TUNER") {
+            if let Some(r) = Readings::parse(&n.data) {
+                send(Event::Tuner(r));
+            }
+        } else if Some(n.addr) == tables::command("RUNNING_MODE") && !n.data.is_empty() {
+            send(Event::RunningMode(n.data[0]));
         } else if let Some(num) = current_patch_from(&n) {
             send(Event::CurrentPatch(num));
             patch_changed = true;
@@ -774,5 +810,27 @@ mod tests {
         assert!(matches!(events[1], Event::CurrentPatch(132)));
         assert!(matches!(events[2], Event::Patch(PatchId::Temp, _)), "patch change re-reads the live patch");
         assert_eq!(events.len(), 3);
+    }
+
+    #[test]
+    fn tuner_on_brings_readings() {
+        if !real_tables() {
+            return;
+        }
+        // The simulator answers "tuner on" with one set of readings (and the TT target)…
+        let mut sim = demo_sim();
+        let mode = tables::command("RUNNING_MODE").unwrap();
+        let id = opengx100_protocol::sysex::DEFAULT_DEVICE_ID;
+        sim.send(&opengx100_protocol::sysex::dt1(id, mode, &[tuner::Kind::Mono.running_mode()])).unwrap();
+        // …then the tuner footswitch switches it off.
+        sim.push_unsolicited(mode, &[0]);
+        let transport: Box<dyn Transport> = Box::new(sim);
+        let mut d = Device::new(transport).without_pacing().with_timeout(Duration::from_millis(50));
+        let events = RefCell::new(Vec::new());
+        drain_notifications(&mut d, &|e| events.borrow_mut().push(e));
+        let events = events.into_inner();
+        assert!(matches!(&events[0], Event::Tuner(r) if r.mono.note == 45 && r.strings[0].in_tune));
+        assert!(events.iter().any(|e| matches!(e, Event::SystemChanged { .. })), "TT target (Setup_temp)");
+        assert!(matches!(events.last(), Some(Event::RunningMode(0))));
     }
 }

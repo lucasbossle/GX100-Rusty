@@ -9,6 +9,7 @@ use opengx100_protocol::patch::{self, FX_SLOTS};
 use opengx100_protocol::session::{Device, ParamValue, Transport};
 use opengx100_protocol::sim::SimulatedGx100;
 use opengx100_protocol::tables::{self, FxField, TablesSource};
+use opengx100_protocol::tuner;
 use opengx100_protocol::Address;
 use std::error::Error;
 use std::time::Duration;
@@ -36,6 +37,8 @@ Talking to the pedal (or the simulator with --sim):
                                show its chain and every parameter in it
   monitor [<seconds>]          turn editor mode on and print what the pedal sends by
                                itself (footswitches, expression pedal, patch changes)
+  tuner [<seconds>]            show the pedal's tuner (its current kind) and print what it measures,
+                               then switch back to play (default 10 s)
   write-check                  verify every kind of write with writes that change nothing:
                                re-select the current patch, WRITE it onto itself, rewrite its
                                stored copy, write a system setting, assign 1 and the chain with
@@ -119,8 +122,8 @@ fn run() -> Res {
         "fx-types" => fx_types(rest),
         "commands" => commands(),
         "ports" => ports(),
-        "identify" | "hello" | "get" | "set" | "slots" | "chain" | "patch" | "monitor" | "write-check" | "fx-get"
-        | "fx-set" => {
+        "identify" | "hello" | "get" | "set" | "slots" | "chain" | "patch" | "monitor" | "tuner" | "write-check"
+        | "fx-get" | "fx-set" => {
             let mut dev = connect(&o)?;
             match cmd.as_str() {
                 "identify" => Ok(()), // connect() already identified
@@ -131,6 +134,7 @@ fn run() -> Res {
                 "chain" => show_chain(&mut dev),
                 "patch" => show_patch(&mut dev, rest),
                 "monitor" => monitor(&mut dev, rest),
+                "tuner" => tuner_cmd(&mut dev, rest),
                 "write-check" => write_check(&mut dev),
                 "fx-get" => fx_get(&mut dev, rest),
                 _ => fx_set(&mut dev, rest),
@@ -587,6 +591,57 @@ fn write_check<T: Transport>(dev: &mut Device<T>) -> Res {
     }
     println!("all write paths verified");
     Ok(())
+}
+
+fn tuner_cmd<T: Transport>(dev: &mut Device<T>, rest: &[String]) -> Res {
+    let secs: u64 = rest.first().map(|s| s.parse()).transpose()?.unwrap_or(10);
+    let ty = tables::param("System_common.TunerType").ok_or("no TunerType")?;
+    let kind = match dev.read_param(ty)? {
+        ParamValue::Num(n) => tuner::Kind::from_type(n),
+        v => return Err(format!("odd tuner type {v}").into()),
+    };
+    println!("tuner {kind:?} for {secs} s — play a string…");
+    let end = std::time::Instant::now() + Duration::from_secs(secs);
+    with_editor_mode(dev, |d| {
+        d.tuner_on(kind)?;
+        let mut last = None;
+        while let Some(left) = end.checked_duration_since(std::time::Instant::now()) {
+            let Some(n) = d.next_notification(left)? else { break };
+            if Some(n.addr) == tables::command("TUNER") {
+                let Some(r) = tuner::Readings::parse(&n.data) else { continue };
+                let line = |r: &tuner::Reading| match r.has_signal() {
+                    true => format!(
+                        "{}{} {:+5}{}",
+                        tuner::note_name(r.note),
+                        tuner::octave(r.note),
+                        r.value as i32 - 5000,
+                        if r.in_tune { " ok" } else { "" }
+                    ),
+                    false => "-".into(),
+                };
+                let text = format!(
+                    "mono {:<16} strings {}",
+                    line(&r.mono),
+                    r.strings.iter().map(line).collect::<Vec<_>>().join(" | ")
+                );
+                if last.as_ref() != Some(&text) {
+                    println!("  {text}");
+                    last = Some(text);
+                }
+            } else {
+                let hex: Vec<String> = n.data.iter().map(|b| format!("{b:02X}")).collect();
+                println!("  pedal sent {}  {}", n.addr, hex.join(" "));
+            }
+        }
+        d.tuner_off()?;
+        // The pedal confirms the running mode it's in.
+        while let Some(n) = d.next_notification(Duration::from_millis(500))? {
+            if Some(n.addr) == tables::command("RUNNING_MODE") {
+                println!("  running mode now {}", n.data.first().copied().unwrap_or(0));
+            }
+        }
+        Ok(())
+    })
 }
 
 fn monitor<T: Transport>(dev: &mut Device<T>, rest: &[String]) -> Res {

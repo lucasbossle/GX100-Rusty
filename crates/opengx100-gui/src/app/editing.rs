@@ -199,7 +199,7 @@ pub(super) fn fx_options(p: &FxParamDef) -> Vec<(i32, &'static str)> {
     p.values.iter().enumerate().map(|(i, l)| (if spans { p.min + i as i32 } else { i as i32 }, *l)).collect()
 }
 
-fn param_options(p: &ParamDef) -> Vec<(i32, &'static str)> {
+pub(super) fn param_options(p: &ParamDef) -> Vec<(i32, &'static str)> {
     p.labels().map(|v| v.options().collect()).unwrap_or_default()
 }
 
@@ -302,7 +302,7 @@ impl EditorApp {
     }
 
     /// The bytes of `len` system-setting bytes at `addr`, from the copy read at connect.
-    fn system_bytes(&self, addr: opengx100_protocol::Address, len: u32) -> Option<&[u8]> {
+    pub(super) fn system_bytes(&self, addr: opengx100_protocol::Address, len: u32) -> Option<&[u8]> {
         self.system.iter().find_map(|a| {
             let off = addr.since(a.addr)? as usize;
             a.data.get(off..off + len as usize)

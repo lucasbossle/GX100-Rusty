@@ -80,6 +80,8 @@ sandbox, writes `extracted/*.json` incl. `tables.json`) and `opengx100-extract` 
   - `chain` — chain edits as BTS does them: `Links` (the linked list, 50 values: `ChainTopItem` + 49
     `ChainNextItem`), `Kind`, `Limits` (`Setup_temp2/3`, `Device::read_chain_limits`), `Edit` (Insert/Remove/Move/
     Replace) → `plan()` (rules + messages) → `Device::edit_chain`; `unchanged()` = the no-op used by `write-check`
+  - `tuner` — `Kind` (MONO/POLY/TT ↔ `TunerType`, `RUNNING_MODE`), `Readings::parse` (48 bytes at `TUNER`),
+    `open_strings`, `tt_strings`, `cent_offset`, `Device::tuner_on/tuner_off`
   - `assign` — the 20 assigns: `target` (→ `Target::Fx/Master/Tuner/MidiCc/MidiPc`), `category_choices`,
     `targets_for`, `applies` (what BTS greys out), and edits that return BTS's messages (`set_field`, `set_target`,
     `set_category`, `block_message`)
@@ -89,8 +91,8 @@ sandbox, writes `extracted/*.json` incl. `tables.json`) and `opengx100-extract` 
     patch into Temp), SETTING_WRITE_CMD, a 1-byte write to an FX slot's Type (loads that type's defaults: assumed,
     not verified on the pedal), `Setup_temp3` all 7F (anything fits); `push_unsolicited` fakes pedal-initiated DT1s
 - `crates/opengx100-midi` — midir transport (`open`, `open_with_waker`, `port_names`), shared by CLI and GUI
-- `crates/opengx100-cli` — `opengx100` binary (MIDI behind default feature `midi`): `ports identify hello get set slots patch
-  monitor write-check fx-get fx-set find fx-types commands`
+- `crates/opengx100-cli` — `opengx100` binary (MIDI behind default feature `midi`): `ports identify hello get set slots chain patch
+  monitor tuner write-check fx-get fx-set find fx-types commands`
 - `crates/opengx100-gui` — `opengx100-editor` binary, eframe/egui **0.37** (new API: `App::ui` + `App::logic`,
   `egui::Panel::top/left`, `Id::unique`, `ScrollArea::scroll_source`). Deps allowed here: serde, serde_json, dirs,
   chrono, rfd.
@@ -106,7 +108,8 @@ sandbox, writes `extracted/*.json` incl. `tables.json`) and `opengx100-extract` 
     (`set_temp_param`, `set_fx_param`, `set_fx_switch`, `set_sys_param`), unsaved-changes check (`patch_differs`:
     ignores pedal-position and the led block), CTL/EXP, IN/OUT, System menus, dialogs (Write, unsaved switch,
     save input setting, confirm setlist write).
-  - `app/assigns.rs` — CTL/EXP → Assigns page.
+  - `app/assigns.rs` — CTL/EXP → Assigns page. `app/tuner.rs` — Tuner tab (`sync_tuner`: on while the tab is
+    open; `pedal_running_mode`: the pedal's footswitch opens/closes it; echoes within 0.5 s of our own command ignored).
   - `app/setlists.rs` — Setlists tab; `app/backups.rs` — Backups tab; `store.rs` — persistence.
 - `crates/opengx100-protocol/fixtures/{tables,docs}.json` — SYNTHETIC tables (made-up FX), embedded as the fallback
 - `crates/opengx100-extract` — boa + dirs: `find_app`, `app_version`, `extract` (core.js in boa), `prepare` (env → cache
@@ -119,7 +122,8 @@ sandbox, writes `extracted/*.json` incl. `tables.json`) and `opengx100-extract` 
   amber bar on pedal FX). Clicking a patch in the list switches the pedal to it (asks first if there are unsaved
   edits). Every patch setting, FX on/off and FX parameter is editable and written immediately. "● edited" = live patch
   differs from the stored copy. **Write…** = PATCH_WRITE (name + target slot, warns when replacing another patch).
-  **Revert** = load the stored copy into the live patch. **Chain editing** (`app/chain_edit.rs`): drag a block onto
+  **Revert** = load the stored copy into the live patch. The chain diagram folds snake-like to the panel width
+  (lines alternate direction; a parallel section never splits). **Chain editing** (`app/chain_edit.rs`): drag a block onto
   a gap to move it (DIVIDER/MIXER drag the whole section), click "+" in a gap to add an effect (FX picker window,
   greyed types say why on hover), ◀ ▶ / Replace… / Remove(branch) next to the selected effect's name. Confirm dialog
   only when the pedal's DELETE/OVERWRITE WARNING is on (as BTS). The worker re-reads the limits, plans, writes, then
@@ -217,6 +221,21 @@ sandbox, writes `extracted/*.json` incl. `tables.json`) and `opengx100-extract` 
   position p (BTS's RQ1 for section B uses a wrong address; we read the whole block). The pedal answers these
   without editor mode and, in editor mode, **pushes Setup_temp3 and Setup_temp2 itself after a chain edit**, plus
   the fxItem blocks and knob settings. No-op chain edit verified on the pedal (`write-check`, 2026-10-22).
+- **Tuner** (`tuner_controller.js`, `running_mode_controller.js`, `midi_observe_controller.js`; traced 2026-10-22):
+  on = `System_common.TunerType` (1 MONO / 2 POLY / 3 TT; 0 is treated as POLY), + `TunerMode` = 0 for MONO/TT,
+  then `RUNNING_MODE` (`7F 00 00 02`) = 1 (MONO, TT) or 2 (POLY); off = `RUNNING_MODE` 0. The pedal confirms with
+  `RUNNING_MODE` (and `EDITOR_COMMUNICATION_MODE`) and sends `RUNNING_MODE` itself when its tuner footswitch is used.
+  Readings (editor mode): 48 bytes at `TUNER` (`7F 00 03 00`) = 8 × [MIDI note (0 = none), value as 4 nibbles 0–10000
+  (5000 = in tune; mapping to cents unknown, so we show no number), in-tune flag]; first = MONO/TT, then strings 1–7.
+  **Sent only when something changes** (nothing for seconds without a signal). TT: the pedal also sends
+  `Setup_temp.TTTargetStringNum/TTTargetName/TTCentOffset` (offset 7E = -2, 7F = -1). Settings: `System_pitch.*`
+  and `Setup_temp.TTMode` (AUTO, then strings n…1 for the instrument). THRU output: POLY can't use it and BTS
+  won't change the kind while it's set. Verified on the pedal: on → mode 1, readings arrive, off → mode 0; TunerType
+  written with its own value. Reads keep working while the tuner runs.
+- `Device` waits for an answer only until its deadline even while the pedal keeps sending other things (before
+  2026-10-22 a steady stream, e.g. the expression pedal, could hang a read whose answer was lost).
+- Tables bundle **format 3** (2026-10-22): the extractor also keeps a list when the widget shows the range shifted
+  (REF. PITCH 435–445 Hz for 0–10). Older caches re-extract.
 
 ## Commands
 ```sh
@@ -232,6 +251,7 @@ cargo run -p opengx100-cli -- hello       # real pedal, read-only
 cargo run -p opengx100-cli -- patch 132   # dump a stored patch incl. its assigns (no number: the live patch)
 cargo run -p opengx100-cli -- monitor 30  # print what the pedal pushes (editor mode on, then off)
 cargo run -p opengx100-cli -- write-check # no-op write verification (refuses if the live patch has unsaved edits)
+cargo run -p opengx100-cli -- tuner 10    # the pedal's tuner for 10 s (writes TunerType with its own value)
 ```
 Quit the GUI (⌘Q) before using the CLI on the pedal: two programs toggling editor mode interfere, and killing the GUI
 skips its exit hook (the pedal then stays in editor mode until the next connect).

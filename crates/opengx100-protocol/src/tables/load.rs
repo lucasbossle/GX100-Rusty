@@ -247,7 +247,7 @@ fn docs(j: &Json) -> (&'static [FxDoc], &'static [ParamDoc]) {
 pub fn from_json(bundle: &str, guide: Option<&str>) -> Res<Tables> {
     let b = Json::parse(bundle).map_err(|e| format!("tables: {e}"))?;
     match b.get("format").and_then(int_of) {
-        Some(2) => {}
+        Some(3) => {}
         f => return Err(format!("tables: unsupported format {f:?} (re-extract them)")),
     }
     let source = if b.get("fixture").and_then(Json::as_bool) == Some(true) {
