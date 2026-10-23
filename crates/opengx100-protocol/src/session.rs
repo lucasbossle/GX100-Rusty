@@ -181,12 +181,21 @@ impl<T: Transport> Device<T> {
         }
     }
 
+    /// The next message while waiting for an answer: none once `deadline` has passed, even if the pedal keeps
+    /// sending other things (the tuner and the expression pedal stream without pause).
+    fn answer_before(&mut self, deadline: Instant) -> Result<Option<Message>> {
+        if Instant::now() >= deadline {
+            return Ok(None);
+        }
+        self.next_message(deadline)
+    }
+
     /// Sends the universal identity request and adopts the device ID the pedal reports.
     pub fn identify(&mut self) -> Result<IdentityReply> {
         self.send(&sysex::identity_request())?;
         let deadline = Instant::now() + self.timeout;
         let mut other = None;
-        while let Some(m) = self.next_message(deadline)? {
+        while let Some(m) = self.answer_before(deadline)? {
             match m {
                 Message::IdentityReply(r) if r.is_gx100() => {
                     self.device_id = r.device_id;
@@ -211,7 +220,7 @@ impl<T: Transport> Device<T> {
         let mut got = 0u32;
         let mut deadline = Instant::now() + self.timeout;
         while got < size {
-            let Some(m) = self.next_message(deadline)? else {
+            let Some(m) = self.answer_before(deadline)? else {
                 return Err(if got == 0 {
                     Error::Timeout(format!("read {size} bytes at {addr}"))
                 } else {
@@ -284,7 +293,7 @@ impl<T: Transport> Device<T> {
         let addr = tables::command(name).ok_or_else(|| Error::Unknown(format!("command {name}")))?;
         self.write_unchecked(addr, data)?;
         let deadline = Instant::now() + timeout;
-        while let Some(m) = self.next_message(deadline)? {
+        while let Some(m) = self.answer_before(deadline)? {
             match m {
                 Message::Dt1 { addr: at, .. } if at == addr => return Ok(()),
                 m => self.keep_notification(m),
@@ -329,7 +338,7 @@ impl<T: Transport> Device<T> {
         let addr = tables::command("IS_RQ1_ACCEPT").ok_or_else(|| Error::Unknown("command IS_RQ1_ACCEPT".into()))?;
         self.send_command("IS_RQ1_ACCEPT", &[0])?;
         let deadline = Instant::now() + self.timeout;
-        while let Some(m) = self.next_message(deadline)? {
+        while let Some(m) = self.answer_before(deadline)? {
             match m {
                 Message::Dt1 { addr: at, data, .. } if at == addr && !data.is_empty() => return Ok(data[0] == 1),
                 m => self.keep_notification(m),
@@ -434,6 +443,29 @@ mod tests {
         let mut d = dev(SimulatedGx100::new().silent());
         assert!(matches!(d.read(Address::from_wire([0, 0, 0, 0]), 4), Err(Error::Timeout(_))));
         assert!(matches!(d.identify(), Err(Error::Timeout(_))));
+    }
+
+    /// A pedal that never answers but keeps sending something else (like its tuner does).
+    struct Chatty;
+
+    impl Transport for Chatty {
+        fn send(&mut self, _msg: &[u8]) -> std::result::Result<(), String> {
+            Ok(())
+        }
+        fn recv(&mut self, _timeout: Duration) -> std::result::Result<Option<Vec<u8>>, String> {
+            std::thread::sleep(Duration::from_millis(1));
+            Ok(Some(sysex::dt1(sysex::DEFAULT_DEVICE_ID, Address::from_wire([0x7F, 0, 3, 0]), &[0; 48])))
+        }
+    }
+
+    #[test]
+    fn a_stream_of_other_messages_doesnt_stop_the_timeout() {
+        let mut d = Device::new(Chatty).without_pacing().with_timeout(Duration::from_millis(50));
+        let start = Instant::now();
+        assert!(matches!(d.read(Address::from_wire([0, 0, 0, 0]), 4), Err(Error::Timeout(_))));
+        assert!(matches!(d.rq1_accepted(), Err(Error::Timeout(_))));
+        assert!(start.elapsed() < Duration::from_secs(1));
+        assert!(d.next_notification(Duration::ZERO).unwrap().is_some(), "what streamed in is kept");
     }
 
     #[test]
